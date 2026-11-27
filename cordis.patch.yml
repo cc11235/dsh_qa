@@ -8,3 +8,4 @@
         captureAssistant: false
         maxBugsPerTurn: 6
         autoStatusFallback: true
+        currentUser: ""

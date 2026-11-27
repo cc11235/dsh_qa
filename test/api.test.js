@@ -34,6 +34,8 @@ test('state returns a complete snapshot with loopback and same-origin requests',
     assert.equal(res.headers['Cache-Control'], 'no-store');
     const snapshot = res.json;
     assert.equal(snapshot.ok, true);
+    assert.equal(typeof snapshot.currentUser, 'string');
+    assert.ok(snapshot.currentUser.length > 0);
     assert.deepEqual(snapshot.bugs, []);
     assert.equal(snapshot.stats.total, 0);
     assert.deepEqual(snapshot.projects, []);

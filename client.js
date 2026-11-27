@@ -317,10 +317,11 @@ window.__ModuleLoader__.load({
 
     function AssigneeTag({ assignee }) {
       if (!assignee) return null;
+      const label = assignee === 'bot' ? '机器人' : assignee;
       return h('span', {
-        className: 'qag-chip qag-chip--assignee',
-        title: `负责人：${assignee}`,
-      }, assignee);
+        className: `qag-chip qag-chip--assignee${assignee === 'bot' ? ' is-bot' : ''}`,
+        title: `负责人：${label}${assignee === 'bot' ? '（bot）' : ''}`,
+      }, label);
     }
 
     function Stat({ label, value, tone, active, onClick }) {
@@ -553,7 +554,7 @@ window.__ModuleLoader__.load({
           h('td', { key: 'source', className: 'qag-col-source' }, h(SourceTag, { source: bug.source })),
           h('td', { key: 'status', className: 'qag-col-status' }, h(FixTag, { bug })),
           h('td', { key: 'module', className: 'qag-col-module' }, bug.module ? h(ModuleTag, { module: bug.module }) : h('span', { className: 'qag-muted' }, '—')),
-          h('td', { key: 'assignee', className: 'qag-col-assignee' }, bug.assignee || h('span', { className: 'qag-muted' }, '—')),
+          h('td', { key: 'assignee', className: 'qag-col-assignee' }, bug.assignee ? h(AssigneeTag, { assignee: bug.assignee }) : h('span', { className: 'qag-muted' }, '—')),
           h('td', { key: 'project', className: 'qag-col-project' }, bug.workspaceName || '未归类'),
           h('td', { key: 'time', className: 'qag-col-time', title: fullTime(bug.updatedAt) }, timeAgo(bug.updatedAt)),
           h('td', { key: 'occ', className: 'qag-col-occ' }, String(bug.occurrence)),
@@ -920,7 +921,7 @@ window.__ModuleLoader__.load({
                 ['提出方式', SOURCE[bug.source] || '—'],
                 ['修复状态', isBotFix(bug) ? '机器人修复中' : fixStateOf(bug.status).label],
                 ['优先级', PRIORITY[bug.priority]?.label || '普通'],
-                ['负责人', bug.assignee || '—'],
+                ['负责人', bug.assignee === 'bot' ? '机器人（bot）' : (bug.assignee || '—')],
                 ['功能模块', bug.module || '未归类'],
                 ['项目', bug.workspaceName || '未归类'],
                 ['发现版本', bug.foundVersion || '—'],
@@ -1193,6 +1194,7 @@ window.__ModuleLoader__.load({
                 h('li', { key: '4' }, '详情页可记录验证命令和结果：验证通过关闭、验证未通过回到修复中、无法复现进入终态。'),
                 h('li', { key: '5' }, '重复缺陷可在详情页合并到主缺陷，原记录保留并标记为「重复」。'),
                 h('li', { key: '6' }, '顶部可导出 JSON / CSV / Markdown，导入 JSON 前会自动备份；负责人、优先级、版本和标签可编辑和筛选。'),
+                h('li', { key: '7' }, '负责人默认规则：自动捕获和 Agent 上报为「机器人（bot）」，用户反馈和人工新建为当前用户账号；历史空值会在启动时补齐。'),
               ]),
             ]),
             h('section', { key: 'auto', className: 'qag-help__section' }, [

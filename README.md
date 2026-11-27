@@ -151,6 +151,14 @@ git commit -m "fix(viewer): keep closed defects out of the board"
 
 规则是启发式建议，不是强约束；判断不了时显示「未归类」。
 
+## 负责人规则
+
+- `auto` / `agent` 来源（自动捕获、Agent 上报）默认负责人为 `bot`。
+- `user` / `manual` 来源（用户反馈、人工新建）默认负责人为当前用户账号。
+- 当前用户账号默认取操作系统用户名，可在配置中用 `currentUser` 覆盖。
+- 显式传入的负责人优先；合并重复项时，主缺陷为空会继承重复项的负责人。
+- 历史数据中为空的负责人会在启动时按来源补齐。
+
 ## Agent 工具
 
 只注册 6 个核心工具，避免模型在相似工具之间选错：
@@ -203,6 +211,7 @@ git commit -m "fix(viewer): keep closed defects out of the board"
     backfillOnStart: true    # 启用后自动回填最近会话（每 6 小时最多一次）
     backfillDays: 2          # 回填窗口
     dataDir: ""              # 默认 ~/.dsh/qa-guardian
+    currentUser: ""          # 默认取操作系统用户名；用于用户反馈/人工新建的负责人
 ```
 
 ## 数据与权限

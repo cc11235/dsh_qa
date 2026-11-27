@@ -146,6 +146,14 @@ Each defect is linked to a functional module where possible:
 
 These rules are suggestions, not hard constraints. Unmatched defects show `Unclassified`.
 
+## Assignee rules
+
+- `auto` / `agent` sources (automatic capture, Agent report) default to `bot`.
+- `user` / `manual` sources (user report, manual creation) default to the current user account.
+- The current user account defaults to the OS username; override it with `currentUser`.
+- An explicit assignee wins; when merging, an empty master inherits the duplicate’s assignee.
+- Existing records with an empty assignee are filled by source at startup.
+
 ## Agent tools
 
 Only six core tools are registered to reduce selection ambiguity:
@@ -195,6 +203,7 @@ Override the `qa-guardian` row in the profile `cordis.patch.yml`:
     backfillOnStart: true    # backfill recent sessions at most once every 6 hours
     backfillDays: 2          # backfill window
     dataDir: ""              # default ~/.dsh/qa-guardian
+    currentUser: ""          # default OS username; owner for user reports/manual creation
 ```
 
 ## Data and permissions

@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## 0.2.1 - 2026-11-27
+
+### 中文
+
+- 负责人默认规则：`auto` / `agent` 来源为 `bot`，`user` / `manual` 来源为当前用户账号。
+- 当前用户账号默认取操作系统用户名，可用 `currentUser` 配置覆盖。
+- 启动时为历史空负责人按来源补齐；合并重复项时主缺陷为空则继承重复项负责人。
+- 面板状态返回 `currentUser`，负责人标签将 `bot` 显示为「机器人」。
+
+### English
+
+- Default assignees: `auto`/`agent` sources use `bot`; `user`/`manual` sources use the current user account.
+- The current user account defaults to the OS username and can be overridden with `currentUser`.
+- Empty historical assignees are filled by source at startup; merging lets an empty master inherit the duplicate’s assignee.
+- Panel state exposes `currentUser`, and the `bot` assignee renders as “机器人”.
+
 ## 0.2.0 - 2026-11-27
 
 ### 中文

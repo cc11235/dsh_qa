@@ -192,7 +192,21 @@ export async function apply(ctx, rawConfig = {}) {
   const dataDir = typeof config.dataDir === 'string' && config.dataDir.trim()
     ? config.dataDir.trim()
     : defaultDataDir();
-  const store = await new BugStore({ filePath: path.join(dataDir, 'data.json'), log }).load();
+  const store = await new BugStore({
+    filePath: path.join(dataDir, 'data.json'),
+    log,
+    owner: typeof config.currentUser === 'string' && config.currentUser.trim()
+      ? config.currentUser.trim()
+      : (() => {
+        try {
+          return os.userInfo().username;
+        } catch {
+          return '';
+        }
+      })(),
+  }).load();
+  const assignedOwners = store.assignDefaultOwners();
+  if (assignedOwners > 0) await store.flush();
   const sseClients = new Set();
   const notifyClients = () => {
     if (sseClients.size === 0) return;
@@ -248,6 +262,7 @@ export async function apply(ctx, rawConfig = {}) {
     return {
       ok: true,
       bugs,
+      currentUser: store.owner,
       stats: store.stats(),
       projects,
       activity: store.activity(null, 160),
