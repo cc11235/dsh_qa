@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+## 0.2.0 - 2026-11-27
+
+### 中文
+
+#### 新增
+
+- 验证闭环：记录验证命令、输出摘要和结果；验证通过关闭、验证未通过回到修复中、无法复现进入终态。
+- 重复合并：把重复缺陷合并到主缺陷，保留原记录、证据、备注、出现次数和重复关系。
+- 负责人、优先级、截止日期、发现/修复版本和标签，可编辑、筛选和展示。
+- 本地保存筛选视图。
+- JSON / CSV / Markdown 导出，JSON 导入前自动备份，保留最近 7 份备份。
+
+#### 验证
+
+- `npm test`：198 个单元/API 测试通过。
+- 新增验证、合并、导入导出、备份和字段持久化测试。
+
+### English
+
+#### Added
+
+- Verification loop with command/output summary and outcomes: pass closes, fail returns to progress, cannot-reproduce is terminal.
+- Duplicate merging into a master defect while preserving records, evidence, notes, occurrence and duplicate links.
+- Owner, priority, due date, found/fix version and tags, editable, filterable and visible on cards/lists.
+- Locally saved filter views.
+- JSON/CSV/Markdown export, JSON import with automatic backup and seven retained backup copies.
+
+#### Verification
+
+- `npm test`: 198 unit/API tests passed.
+- Added verification, merge, export/import, backup and field persistence tests.
+
 ## 0.1.0 - 2026-11-27
 
 ### 中文

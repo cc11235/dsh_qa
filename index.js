@@ -14,8 +14,11 @@ import { Capture } from './lib/capture.js';
 import { featureFromText } from './lib/features.js';
 import {
   MAX_DESCRIPTION,
+  PRIORITIES,
+  PRIORITY_LABELS,
   SEVERITIES,
   SEVERITY_LABELS,
+  SOURCE_LABELS,
   STATUSES,
   STATUS_LABELS,
 } from './lib/constants.js';
@@ -91,6 +94,56 @@ async function readJsonBody(req, limit = 512 * 1024) {
 function cleanTitle(value, fallback) {
   const title = oneLine(value);
   return title || fallback;
+}
+
+function csvCell(value) {
+  const text = value === undefined || value === null ? '' : String(value);
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function exportCsv(bugs) {
+  const header = ['id', 'title', 'severity', 'status', 'priority', 'module', 'assignee', 'source', 'occurrence', 'workspace', 'foundVersion', 'fixVersion', 'createdAt', 'updatedAt'];
+  const rows = bugs.map(bug => [
+    bug.id,
+    bug.title,
+    bug.severity,
+    bug.status,
+    bug.priority,
+    bug.module,
+    bug.assignee,
+    bug.source,
+    bug.occurrence,
+    bug.workspaceName || bug.workspace,
+    bug.foundVersion,
+    bug.fixVersion,
+    bug.createdAt,
+    bug.updatedAt,
+  ].map(csvCell).join(','));
+  return `\ufeff${header.join(',')}\n${rows.join('\n')}\n`;
+}
+
+function exportMarkdown(bugs) {
+  const lines = [
+    '# QA 缺陷导出',
+    '',
+    `- 导出时间：${new Date().toISOString()}`,
+    `- 缺陷数量：${bugs.length}`,
+    '',
+    '| 编号 | 标题 | 严重度 | 状态 | 优先级 | 模块 | 负责人 | 次数 |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- |',
+    ...bugs.map(bug => `| ${bug.id} | ${String(bug.title).replace(/\|/g, '\\|')} | ${SEVERITY_LABELS[bug.severity] || bug.severity} | ${STATUS_LABELS[bug.status] || bug.status} | ${PRIORITY_LABELS[bug.priority] || bug.priority} | ${bug.module || '未归类'} | ${bug.assignee || '—'} | ${bug.occurrence} |`),
+    '',
+  ];
+  return lines.join('\n');
+}
+
+function sendDownload(res, contentType, filename, body) {
+  res.writeHead(200, {
+    'Content-Type': contentType,
+    'Content-Disposition': `attachment; filename="${filename}"`,
+    'Cache-Control': 'no-store',
+  });
+  res.end(body);
 }
 
 function normalizeSeverity(value) {
@@ -203,7 +256,9 @@ export async function apply(ctx, rawConfig = {}) {
     };
   };
 
-  const stateRoute = ctx.webServer.register({
+  const registerRoute = options => ctx.effect(() => ctx.webServer.register(options));
+
+  const stateRoute = registerRoute({
     kind: 'exact',
     path: `${API_BASE}/state`,
     handler: (req, res) => {
@@ -217,7 +272,7 @@ export async function apply(ctx, rawConfig = {}) {
     },
   });
 
-  const healthRoute = ctx.webServer.register({
+  const healthRoute = registerRoute({
     kind: 'exact',
     path: `${API_BASE}/health`,
     handler: (req, res) => {
@@ -246,7 +301,34 @@ export async function apply(ctx, rawConfig = {}) {
     },
   });
 
-  const eventsRoute = ctx.webServer.register({
+  const exportRoute = registerRoute({
+    kind: 'exact',
+    path: `${API_BASE}/export`,
+    handler: (req, res) => {
+      if (!isLoopbackRequest(req)) return writeJson(res, 403, { ok: false, error: 'loopback only' });
+      if (req.method !== 'GET') return writeJson(res, 405, { ok: false, error: 'method not allowed' });
+      try {
+        const url = new URL(req.url || '/', 'http://127.0.0.1');
+        const format = (url.searchParams.get('format') || 'json').toLowerCase();
+        const bugs = store.list();
+        const stamp = new Date().toISOString().slice(0, 10);
+        if (format === 'csv') {
+          return sendDownload(res, 'text/csv; charset=utf-8', `qa-bugs-${stamp}.csv`, exportCsv(bugs));
+        }
+        if (format === 'md' || format === 'markdown') {
+          return sendDownload(res, 'text/markdown; charset=utf-8', `qa-bugs-${stamp}.md`, exportMarkdown(bugs));
+        }
+        if (format === 'json') {
+          return sendDownload(res, 'application/json; charset=utf-8', `qa-bugs-${stamp}.json`, JSON.stringify(store.exportData(), null, 2));
+        }
+        return writeJson(res, 400, { ok: false, error: 'format must be json, csv or md' });
+      } catch (error) {
+        return writeJson(res, 500, { ok: false, error: error && error.message ? error.message : String(error) });
+      }
+    },
+  });
+
+  const eventsRoute = registerRoute({
     kind: 'exact',
     path: `${API_BASE}/events`,
     handler: (req, res) => {
@@ -277,14 +359,14 @@ export async function apply(ctx, rawConfig = {}) {
     },
   });
 
-  const actionRoute = ctx.webServer.register({
+  const actionRoute = registerRoute({
     kind: 'exact',
     path: `${API_BASE}/action`,
     handler: async (req, res) => {
       if (!isLoopbackRequest(req)) return writeJson(res, 403, { ok: false, error: 'loopback only' });
       if (req.method !== 'POST') return writeJson(res, 405, { ok: false, error: 'method not allowed' });
       try {
-        const body = await readJsonBody(req);
+        const body = await readJsonBody(req, 10 * 1024 * 1024);
         const action = String(body.action || '');
         if (action === 'create') {
           const workspace = typeof body.workspace === 'string' && body.workspace.trim()
@@ -300,6 +382,11 @@ export async function apply(ctx, rawConfig = {}) {
             workspaceName: projectLabel(workspace),
             sessionId: typeof body.sessionId === 'string' ? body.sessionId : '',
             tags: Array.isArray(body.tags) ? body.tags : [],
+            assignee: typeof body.assignee === 'string' ? body.assignee : '',
+            priority: body.priority,
+            dueAt: typeof body.dueAt === 'string' ? body.dueAt : '',
+            fixVersion: typeof body.fixVersion === 'string' ? body.fixVersion : '',
+            foundVersion: typeof body.foundVersion === 'string' ? body.foundVersion : '',
           }, { actor: 'human' });
           return writeJson(res, 200, { ok: true, bug });
         }
@@ -324,10 +411,36 @@ export async function apply(ctx, rawConfig = {}) {
           }
           return writeJson(res, 200, { ok: true, updated, missing });
         }
+        if (action === 'verify') {
+          const bug = store.recordVerification({
+            id: String(body.id || ''),
+            outcome: String(body.outcome || ''),
+            command: String(body.command || ''),
+            note: String(body.note || ''),
+            actor: 'human',
+          });
+          return writeJson(res, 200, { ok: true, bug });
+        }
+        if (action === 'merge') {
+          const result = store.mergeBugs(String(body.masterId || ''), body.duplicateIds, { actor: 'human' });
+          return writeJson(res, 200, { ok: true, master: result.master, merged: result.merged });
+        }
+        if (action === 'import') {
+          if (store.list().length > 0) {
+            await store.flush();
+            await store.createBackup();
+          }
+          const result = await store.importData(body.data);
+          return writeJson(res, 200, { ok: true, imported: result.imported });
+        }
+        if (action === 'backup') {
+          const name = await store.createBackup();
+          return writeJson(res, 200, { ok: true, name });
+        }
         if (action === 'update') {
           const id = String(body.id || '');
           const patch = {};
-          for (const key of ['title', 'description', 'severity', 'status', 'assignee', 'module', 'tags']) {
+          for (const key of ['title', 'description', 'severity', 'status', 'assignee', 'module', 'tags', 'priority', 'dueAt', 'fixVersion', 'foundVersion']) {
             if (body[key] !== undefined) patch[key] = body[key];
           }
           const bug = store.update(id, patch, {
@@ -438,6 +551,12 @@ export async function apply(ctx, rawConfig = {}) {
               title: { type: 'string', description: 'What is broken and where.' },
               description: { type: 'string', description: 'Observed behavior, expected behavior, evidence.' },
               severity: { type: 'string', enum: SEVERITIES, description: 'blocker | critical | major | minor (default major).' },
+              module: { type: 'string', description: 'Optional functional module.' },
+              assignee: { type: 'string', description: 'Optional owner.' },
+              priority: { type: 'string', enum: PRIORITIES, description: 'urgent | high | normal | low.' },
+              dueAt: { type: 'string', description: 'Optional due date (ISO date).' },
+              fixVersion: { type: 'string', description: 'Optional fix version.' },
+              foundVersion: { type: 'string', description: 'Optional found version.' },
               evidence: { type: 'string', description: 'Optional log/test/error excerpt or file location.' },
             },
             required: ['title'],
@@ -500,7 +619,12 @@ export async function apply(ctx, rawConfig = {}) {
           workspaceName: context.workspaceName,
           sessionId: context.sessionId,
           sessionTitle: context.sessionTitle,
-          module: moduleFromText(context.workspace, `${String(item.evidence || '')}\n${String(item.description || '')}`) || featureFromText(`${String(item.evidence || '')}\n${String(item.description || '')}`),
+          module: item.module || moduleFromText(context.workspace, `${String(item.evidence || '')}\n${String(item.description || '')}`) || featureFromText(`${String(item.evidence || '')}\n${String(item.description || '')}`),
+          assignee: item.assignee || '',
+          priority: item.priority,
+          dueAt: item.dueAt || '',
+          fixVersion: item.fixVersion || '',
+          foundVersion: item.foundVersion || '',
           evidence: {
             kind: 'agent-report',
             excerpt: clip(String(item.evidence || item.description || title), 700),

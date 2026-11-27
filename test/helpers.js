@@ -115,6 +115,7 @@ export function mockReq({
   remoteAddress = '127.0.0.1',
   host = '127.0.0.1:50739',
   open = false,
+  url = '/',
 } = {}) {
   let req;
   if (open) {
@@ -123,7 +124,7 @@ export function mockReq({
     req = requestStream(body);
   }
   req.method = method;
-  req.url = '/';
+  req.url = url;
   req.headers = { host, ...headers };
   req.socket = { remoteAddress };
   return req;

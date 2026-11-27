@@ -23,6 +23,8 @@ window.__ModuleLoader__.load({
       open: { label: '待修复', tone: 'danger' },
       progress: { label: '修复中', tone: 'business' },
       verify: { label: '待验证', tone: 'warning' },
+      'cannot-reproduce': { label: '无法复现', tone: 'neutral' },
+      duplicate: { label: '重复', tone: 'neutral' },
       closed: { label: '已关闭', tone: 'success' },
       ignored: { label: '已忽略', tone: 'neutral' },
     };
@@ -32,6 +34,8 @@ window.__ModuleLoader__.load({
       open: { label: '未修复', tone: 'danger' },
       progress: { label: '修复中', tone: 'business' },
       verify: { label: '待验证', tone: 'warning' },
+      'cannot-reproduce': { label: '无法复现', tone: 'neutral' },
+      duplicate: { label: '重复', tone: 'neutral' },
       closed: { label: '已修复', tone: 'success' },
       ignored: { label: '已忽略', tone: 'neutral' },
     };
@@ -53,6 +57,12 @@ window.__ModuleLoader__.load({
       major: { label: '一般', tone: 'warning' },
       minor: { label: '轻微', tone: 'neutral' },
     };
+    const PRIORITY = {
+      urgent: { label: '紧急', tone: 'danger' },
+      high: { label: '高', tone: 'warning' },
+      normal: { label: '普通', tone: 'neutral' },
+      low: { label: '低', tone: 'neutral' },
+    };
     const SOURCE = { auto: 'DSH 自动', user: '用户提出', agent: 'Agent 上报', manual: '人工记录' };
     const EVIDENCE_KIND = {
       'tool-error': '工具失败',
@@ -60,6 +70,8 @@ window.__ModuleLoader__.load({
       resolution: '修复表述',
       'rerun-ok': '重跑通过',
       'git-commit': 'Git 提交',
+      verification: '验证记录',
+      merge: '合并记录',
       'fix-start': '开始修复',
       'agent-report': 'Agent 报告',
       'user-report': '用户提出',
@@ -73,6 +85,7 @@ window.__ModuleLoader__.load({
       note: '记录备注',
       updated: '更新缺陷',
       deleted: '删除缺陷',
+      merged: '合并缺陷',
     };
 
     const HELP_TOOLS = [
@@ -293,6 +306,23 @@ window.__ModuleLoader__.load({
       }, module);
     }
 
+    function PriorityTag({ priority }) {
+      if (!priority || priority === 'normal') return null;
+      const meta = PRIORITY[priority] || PRIORITY.normal;
+      return h('span', {
+        className: `qag-chip qag-chip--priority qag-tone-${meta.tone}`,
+        title: `优先级：${meta.label}`,
+      }, meta.label);
+    }
+
+    function AssigneeTag({ assignee }) {
+      if (!assignee) return null;
+      return h('span', {
+        className: 'qag-chip qag-chip--assignee',
+        title: `负责人：${assignee}`,
+      }, assignee);
+    }
+
     function Stat({ label, value, tone, active, onClick }) {
       return h('button', {
         type: 'button',
@@ -382,7 +412,9 @@ window.__ModuleLoader__.load({
         h('div', { key: 'tags', className: 'qag-card__tags' }, [
           h(SourceTag, { key: 'src', source: bug.source }),
           h(FixTag, { key: 'fix', bug }),
+          h(PriorityTag, { key: 'priority', priority: bug.priority }),
           h(ModuleTag, { key: 'module', module: bug.module }),
+          h(AssigneeTag, { key: 'assignee', assignee: bug.assignee }),
         ]),
         h('div', { key: 'meta', className: 'qag-card__meta' }, [
           h('span', { key: 'p', className: 'qag-card__project', title: bug.workspace || '' }, bug.workspaceName || '未归类'),
@@ -490,9 +522,11 @@ window.__ModuleLoader__.load({
           h('th', { key: 'id', className: 'qag-col-id' }, '编号'),
           h('th', { key: 'title' }, '缺陷'),
           h('th', { key: 'sev', className: 'qag-col-sev' }, '严重度'),
+          h('th', { key: 'priority', className: 'qag-col-priority' }, '优先级'),
           h('th', { key: 'source', className: 'qag-col-source' }, '提出方式'),
           h('th', { key: 'status', className: 'qag-col-status' }, '修复状态'),
           h('th', { key: 'module', className: 'qag-col-module' }, '功能模块'),
+          h('th', { key: 'assignee', className: 'qag-col-assignee' }, '负责人'),
           h('th', { key: 'project', className: 'qag-col-project' }, '项目'),
           h('th', { key: 'updated', className: 'qag-col-time' }, '最近更新'),
           h('th', { key: 'occ', className: 'qag-col-occ' }, '次数'),
@@ -515,9 +549,11 @@ window.__ModuleLoader__.load({
           h('td', { key: 'id', className: 'qag-mono' }, bug.id),
           h('td', { key: 'title' }, h('div', { className: 'qag-table__title' }, bug.title)),
           h('td', { key: 'sev', className: 'qag-col-sev' }, h(SeverityPill, { severity: bug.severity })),
+          h('td', { key: 'priority', className: 'qag-col-priority' }, bug.priority && bug.priority !== 'normal' ? h(PriorityTag, { priority: bug.priority }) : h('span', { className: 'qag-muted' }, '—')),
           h('td', { key: 'source', className: 'qag-col-source' }, h(SourceTag, { source: bug.source })),
           h('td', { key: 'status', className: 'qag-col-status' }, h(FixTag, { bug })),
           h('td', { key: 'module', className: 'qag-col-module' }, bug.module ? h(ModuleTag, { module: bug.module }) : h('span', { className: 'qag-muted' }, '—')),
+          h('td', { key: 'assignee', className: 'qag-col-assignee' }, bug.assignee || h('span', { className: 'qag-muted' }, '—')),
           h('td', { key: 'project', className: 'qag-col-project' }, bug.workspaceName || '未归类'),
           h('td', { key: 'time', className: 'qag-col-time', title: fullTime(bug.updatedAt) }, timeAgo(bug.updatedAt)),
           h('td', { key: 'occ', className: 'qag-col-occ' }, String(bug.occurrence)),
@@ -684,16 +720,36 @@ window.__ModuleLoader__.load({
       ]);
     }
 
-    function Drawer({ bug, onClose, onTransition, onDelete, onSaveEdit, busy }) {
+    function Drawer({ bug, onClose, onTransition, onDelete, onSaveEdit, onVerify, onMerge, allBugs, busy }) {
       const [note, setNote] = useState('');
       const [editing, setEditing] = useState(false);
-      const [draft, setDraft] = useState({ title: '', description: '', severity: 'major', module: '' });
+      const [draft, setDraft] = useState({
+        title: '', description: '', severity: 'major', module: '', assignee: '', priority: 'normal',
+        dueAt: '', fixVersion: '', foundVersion: '', tags: [],
+      });
+      const [verifyCommand, setVerifyCommand] = useState('');
+      const [verifyNote, setVerifyNote] = useState('');
+      const [mergeTarget, setMergeTarget] = useState('');
       const noteRef = useRef(null);
 
       useEffect(() => {
         setEditing(false);
         setNote('');
-        setDraft({ title: bug.title, description: bug.description || '', severity: bug.severity, module: bug.module || '' });
+        setVerifyCommand('');
+        setVerifyNote('');
+        setMergeTarget('');
+        setDraft({
+          title: bug.title,
+          description: bug.description || '',
+          severity: bug.severity,
+          module: bug.module || '',
+          assignee: bug.assignee || '',
+          priority: bug.priority || 'normal',
+          dueAt: bug.dueAt ? bug.dueAt.slice(0, 10) : '',
+          fixVersion: bug.fixVersion || '',
+          foundVersion: bug.foundVersion || '',
+          tags: Array.isArray(bug.tags) ? bug.tags : [],
+        });
       }, [bug.id]);
 
       const onCloseRef = useRef(onClose);
@@ -791,6 +847,60 @@ window.__ModuleLoader__.load({
                   placeholder: '例如：backend/app、viewer、scripts',
                   onChange: event => setDraft({ ...draft, module: event.target.value }),
                 }),
+                h('label', { key: 'al', className: 'qag-field__label' }, '负责人'),
+                h('input', {
+                  key: 'a',
+                  className: 'qag-input',
+                  value: draft.assignee || '',
+                  maxLength: 60,
+                  placeholder: '例如：cc112、后端组',
+                  onChange: event => setDraft({ ...draft, assignee: event.target.value }),
+                }),
+                h('label', { key: 'pl', className: 'qag-field__label' }, '优先级'),
+                h('select', {
+                  key: 'p',
+                  className: 'qag-select',
+                  value: draft.priority || 'normal',
+                  onChange: event => setDraft({ ...draft, priority: event.target.value }),
+                }, Object.keys(PRIORITY).map(value => h('option', { key: value, value }, PRIORITY[value].label))),
+                h('label', { key: 'ddl', className: 'qag-field__label' }, '截止日期'),
+                h('input', {
+                  key: 'dd',
+                  type: 'date',
+                  className: 'qag-input',
+                  value: draft.dueAt || '',
+                  onChange: event => setDraft({ ...draft, dueAt: event.target.value }),
+                }),
+                h('label', { key: 'fvl', className: 'qag-field__label' }, '发现版本 / 修复版本'),
+                h('div', { key: 'versions', className: 'qag-inline-fields' }, [
+                  h('input', {
+                    key: 'fv',
+                    className: 'qag-input',
+                    value: draft.foundVersion || '',
+                    maxLength: 60,
+                    placeholder: '发现版本',
+                    onChange: event => setDraft({ ...draft, foundVersion: event.target.value }),
+                  }),
+                  h('input', {
+                    key: 'fx',
+                    className: 'qag-input',
+                    value: draft.fixVersion || '',
+                    maxLength: 60,
+                    placeholder: '修复版本',
+                    onChange: event => setDraft({ ...draft, fixVersion: event.target.value }),
+                  }),
+                ]),
+                h('label', { key: 'tl', className: 'qag-field__label' }, '标签（逗号分隔）'),
+                h('input', {
+                  key: 't',
+                  className: 'qag-input',
+                  value: (draft.tags || []).join(', '),
+                  placeholder: '例如：auth, regression',
+                  onChange: event => setDraft({
+                    ...draft,
+                    tags: event.target.value.split(/[,，]/).map(tag => tag.trim()).filter(Boolean).slice(0, 12),
+                  }),
+                }),
                 h('label', { key: 'dl', className: 'qag-field__label' }, '缺陷描述'),
                 h('textarea', {
                   key: 'd',
@@ -807,8 +917,13 @@ window.__ModuleLoader__.load({
               h('dl', { key: 'grid', className: 'qag-facts' }, [
                 ['提出方式', SOURCE[bug.source] || '—'],
                 ['修复状态', isBotFix(bug) ? '机器人修复中' : fixStateOf(bug.status).label],
+                ['优先级', PRIORITY[bug.priority]?.label || '普通'],
+                ['负责人', bug.assignee || '—'],
                 ['功能模块', bug.module || '未归类'],
                 ['项目', bug.workspaceName || '未归类'],
+                ['发现版本', bug.foundVersion || '—'],
+                ['修复版本', bug.fixVersion || '—'],
+                ['截止日期', bug.dueAt ? fullTime(bug.dueAt).slice(0, 10) : '—'],
                 ['会话', bug.sessionTitle || (bug.sessionId ? bug.sessionId.slice(0, 18) : '—')],
                 ['首次发现', fullTime(bug.createdAt)],
                 ['最近更新', fullTime(bug.updatedAt)],
@@ -849,6 +964,85 @@ window.__ModuleLoader__.load({
                   }),
                 }, '记录备注'),
               ]),
+            ]),
+
+            h('section', { key: 'verify', className: 'qag-section' }, [
+              h('h3', { key: 't', className: 'qag-section__title' }, '验证与复现'),
+              bug.verification
+                ? h('p', { key: 'last', className: 'qag-muted' }, `最近验证：${bug.verification.outcome === 'passed' ? '通过' : bug.verification.outcome === 'cannot-reproduce' ? '无法复现' : '未通过'} · ${fullTime(bug.verification.at)}${bug.verification.command ? ` · ${bug.verification.command}` : ''}`)
+                : h('p', { key: 'none', className: 'qag-muted' }, '尚未记录验证结果。'),
+              h('input', {
+                key: 'command',
+                className: 'qag-input',
+                value: verifyCommand,
+                placeholder: '验证命令（可选），例如：npm test -- auth',
+                onChange: event => setVerifyCommand(event.target.value),
+              }),
+              h('textarea', {
+                key: 'vnote',
+                className: 'qag-textarea qag-textarea--sm',
+                rows: 2,
+                value: verifyNote,
+                placeholder: '验证输出摘要 / 无法复现说明（可选）',
+                onChange: event => setVerifyNote(event.target.value),
+              }),
+              h('div', { key: 'actions', className: 'qag-status-actions' }, [
+                h('button', {
+                  key: 'pass',
+                  type: 'button',
+                  className: 'qag-btn qag-btn--primary qag-btn--sm',
+                  disabled: busy,
+                  onClick: () => onVerify(bug.id, 'passed', verifyCommand, verifyNote),
+                }, '验证通过'),
+                h('button', {
+                  key: 'fail',
+                  type: 'button',
+                  className: 'qag-btn qag-btn--ghost qag-btn--sm',
+                  disabled: busy,
+                  onClick: () => onVerify(bug.id, 'failed', verifyCommand, verifyNote),
+                }, '验证未通过'),
+                h('button', {
+                  key: 'cannot',
+                  type: 'button',
+                  className: 'qag-btn qag-btn--ghost qag-btn--sm',
+                  disabled: busy,
+                  onClick: () => onVerify(bug.id, 'cannot-reproduce', verifyCommand, verifyNote),
+                }, '无法复现'),
+              ]),
+            ]),
+
+            h('section', { key: 'merge', className: 'qag-section' }, [
+              h('h3', { key: 't', className: 'qag-section__title' }, '重复与合并'),
+              bug.duplicateOf
+                ? h('p', { key: 'dup', className: 'qag-muted' }, `已合并到 ${bug.duplicateOf}`)
+                : null,
+              (allBugs || []).filter(item => item.id !== bug.id && item.status !== 'duplicate' && item.status !== 'ignored').length === 0
+                ? h('p', { key: 'none', className: 'qag-muted' }, '暂无可合并的其他缺陷。')
+                : h('div', { key: 'row', className: 'qag-inline-fields' }, [
+                  h('select', {
+                    key: 'target',
+                    className: 'qag-select',
+                    value: mergeTarget,
+                    onChange: event => setMergeTarget(event.target.value),
+                  }, [
+                    h('option', { key: 'none', value: '' }, '选择主缺陷…'),
+                    ...(allBugs || [])
+                      .filter(item => item.id !== bug.id && item.status !== 'duplicate' && item.status !== 'ignored')
+                      .map(item => h('option', { key: item.id, value: item.id }, `${item.id} ${item.title.length > 42 ? `${item.title.slice(0, 42)}…` : item.title}`)),
+                  ]),
+                  h('button', {
+                    key: 'merge',
+                    type: 'button',
+                    className: 'qag-btn qag-btn--ghost qag-btn--sm',
+                    disabled: busy || !mergeTarget,
+                    onClick: () => {
+                      if (!mergeTarget) return;
+                      if (window.confirm(`把 ${bug.id} 合并到 ${mergeTarget}？合并后本条标记为重复。`)) {
+                        onMerge(mergeTarget, [bug.id]).then(() => setMergeTarget(''));
+                      }
+                    },
+                  }, '合并到主缺陷'),
+                ]),
             ]),
 
             h('section', { key: 'evidence', className: 'qag-section' }, [
@@ -986,6 +1180,9 @@ window.__ModuleLoader__.load({
                 h('li', { key: '1' }, '看板只显示待确认、待修复、修复中、待验证；已关闭不再占列，可从「已关闭 N 条」去列表查看。'),
                 h('li', { key: '2' }, '「日历」按天汇总新增、已修复和状态变化，点击日期查看当天缺陷动态。'),
                 h('li', { key: '3' }, '看板和列表都支持多选 / 全选，批量解决、忽略或标记待验证。'),
+                h('li', { key: '4' }, '详情页可记录验证命令和结果：验证通过关闭、验证未通过回到修复中、无法复现进入终态。'),
+                h('li', { key: '5' }, '重复缺陷可在详情页合并到主缺陷，原记录保留并标记为「重复」。'),
+                h('li', { key: '6' }, '顶部可导出 JSON / CSV / Markdown，导入 JSON 前会自动备份；负责人、优先级、版本和标签可编辑和筛选。'),
               ]),
             ]),
             h('section', { key: 'auto', className: 'qag-help__section' }, [
@@ -993,7 +1190,7 @@ window.__ModuleLoader__.load({
               h('ul', { key: 'list', className: 'qag-help__bullets' }, [
                 h('li', { key: '1' }, '用户反馈直接进入「待修复」；构建 / 测试 / 运行失败等自动候选先进入「待确认」。'),
                 h('li', { key: '2' }, '用户反馈或自动候选产生后的第一次有效动作、DSH 说「开始修复 / 定位到原因」或实际编辑文件时，最近一条未关闭缺陷自动进入「机器人修复中」。'),
-                h('li', { key: '3' }, '助手说「已修复」会推进到「待验证」；用户说「好了 / 正常了」会关闭最近一条未关闭缺陷。'),
+                h('li', { key: '3' }, '模型调用 qa_mark_fixed、同命令重跑成功或匹配到 Git 修复提交时推进到「待验证」；助手文本提取默认关闭。'),
                 h('li', { key: '4' }, '用户消息或助手回复中出现 bug 现象会自动提取；同一文件的重复反馈会合并。'),
                 h('li', { key: '5' }, '只记录实际项目缺陷；功能需求、提问、工具调用失败、环境问题都不会进看板。'),
               ]),
@@ -1114,12 +1311,24 @@ window.__ModuleLoader__.load({
       const [sourceFilter, setSourceFilter] = useState('all');
       const [moduleFilter, setModuleFilter] = useState('all');
       const [status, setStatus] = useState('all');
+      const [priorityFilter, setPriorityFilter] = useState('all');
+      const [assigneeFilter, setAssigneeFilter] = useState('all');
+      const [savedViews, setSavedViews] = useState(() => {
+        try {
+          const saved = JSON.parse(window.localStorage.getItem('qa-guardian-views') || '[]');
+          return Array.isArray(saved) ? saved : [];
+        } catch {
+          return [];
+        }
+      });
       const [selectedId, setSelectedId] = useState('');
       const [adding, setAdding] = useState(false);
       const [helpOpen, setHelpOpen] = useState(false);
       const [selectedIds, setSelectedIds] = useState(() => new Set());
       const [busy, setBusy] = useState(false);
       const [toast, setToast] = useState('');
+      const [exportFormat, setExportFormat] = useState('json');
+      const fileInputRef = useRef(null);
       const inflight = useRef(false);
       const mounted = useRef(true);
       const reloadTimer = useRef(null);
@@ -1224,19 +1433,59 @@ window.__ModuleLoader__.load({
 
       const scoped = useMemo(() => bugs.filter(bug => project === 'all' || bug.workspace === project), [bugs, project]);
       const moduleOptions = useMemo(() => [...new Set(scoped.map(bug => bug.module).filter(Boolean))].sort(), [scoped]);
+      const assigneeOptions = useMemo(() => [...new Set(scoped.map(bug => bug.assignee).filter(Boolean))].sort(), [scoped]);
       const filtered = useMemo(() => {
         const needle = query.trim().toLowerCase();
         return scoped.filter(bug => {
           if (severity !== 'all' && bug.severity !== severity) return false;
           if (sourceFilter !== 'all' && bug.source !== sourceFilter) return false;
           if (moduleFilter !== 'all' && (bug.module || '') !== moduleFilter) return false;
+          if (priorityFilter !== 'all' && (bug.priority || 'normal') !== priorityFilter) return false;
+          if (assigneeFilter !== 'all' && (bug.assignee || '') !== assigneeFilter) return false;
           if (status === 'active' && !['new', 'open', 'progress'].includes(bug.status)) return false;
           if (status === 'unfixed' && !['new', 'open'].includes(bug.status)) return false;
           if (status !== 'all' && status !== 'active' && status !== 'unfixed' && bug.status !== status) return false;
           if (!needle) return true;
           return `${bug.id} ${bug.title} ${bug.description} ${bug.workspaceName} ${bug.sessionTitle}`.toLowerCase().includes(needle);
         });
-      }, [scoped, query, severity, sourceFilter, moduleFilter, status]);
+      }, [scoped, query, severity, sourceFilter, moduleFilter, priorityFilter, assigneeFilter, status]);
+
+      const persistViews = next => {
+        setSavedViews(next);
+        try {
+          window.localStorage.setItem('qa-guardian-views', JSON.stringify(next));
+        } catch {
+          // localStorage may be unavailable; the views still work for this session.
+        }
+      };
+      const applySavedView = name => {
+        const view = savedViews.find(item => item.name === name);
+        if (!view) return;
+        setProject(view.project || 'all');
+        setQuery(view.query || '');
+        setSeverity(view.severity || 'all');
+        setSourceFilter(view.sourceFilter || 'all');
+        setModuleFilter(view.moduleFilter || 'all');
+        setStatus(view.status || 'all');
+        setPriorityFilter(view.priorityFilter || 'all');
+        setAssigneeFilter(view.assigneeFilter || 'all');
+      };
+      const saveCurrentView = () => {
+        const name = window.prompt('视图名称', '我的待验证');
+        if (!name || !name.trim()) return;
+        const view = {
+          name: name.trim(),
+          project, query, severity, sourceFilter, moduleFilter, status, priorityFilter, assigneeFilter,
+        };
+        persistViews([...savedViews.filter(item => item.name !== view.name), view]);
+        setToast(`已保存视图「${view.name}」`);
+      };
+      const removeCurrentView = () => {
+        if (!savedViews.length) return;
+        const name = window.prompt(`删除哪个视图？可选：${savedViews.map(item => item.name).join(' / ')}`, savedViews[0].name);
+        if (!name) return;
+        persistViews(savedViews.filter(item => item.name !== name.trim()));
+      };
 
       const selectedVisibleCount = filtered.reduce((count, bug) => count + (selectedIds.has(bug.id) ? 1 : 0), 0);
       const allVisibleSelected = filtered.length > 0 && selectedVisibleCount === filtered.length;
@@ -1316,8 +1565,26 @@ window.__ModuleLoader__.load({
           description: draft.description,
           severity: draft.severity,
           module: draft.module || '',
+          assignee: draft.assignee || '',
+          priority: draft.priority || 'normal',
+          dueAt: draft.dueAt || '',
+          fixVersion: draft.fixVersion || '',
+          foundVersion: draft.foundVersion || '',
+          tags: Array.isArray(draft.tags) ? draft.tags : [],
         });
         if (ok) setToast('缺陷已保存');
+      }, [mutate]);
+
+      const onVerification = useCallback(async (id, outcome, command, note) => {
+        const ok = await mutate({ action: 'verify', id, outcome, command, note });
+        if (ok) setToast(outcome === 'passed' ? '验证通过，缺陷已关闭' : outcome === 'cannot-reproduce' ? '已标记为无法复现' : '验证未通过，已回到修复中');
+        return ok;
+      }, [mutate]);
+
+      const onMerge = useCallback(async (masterId, duplicateIds) => {
+        const ok = await mutate({ action: 'merge', masterId, duplicateIds });
+        if (ok) setToast('已合并重复缺陷');
+        return ok;
       }, [mutate]);
 
       const onDelete = useCallback(async id => {
@@ -1333,6 +1600,31 @@ window.__ModuleLoader__.load({
         if (ok) setToast('缺陷已创建');
         return ok;
       }, [mutate]);
+
+      const downloadExport = () => {
+        const link = document.createElement('a');
+        link.href = `${API}/export?format=${encodeURIComponent(exportFormat)}`;
+        link.download = '';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setToast(`已导出 ${exportFormat.toUpperCase()}`);
+      };
+
+      const onImportFile = async event => {
+        const file = event.target.files && event.target.files[0];
+        event.target.value = '';
+        if (!file) return;
+        try {
+          const data = JSON.parse(await file.text());
+          if (!data || !Array.isArray(data.bugs)) throw new Error('文件中没有 bugs 数组');
+          if (!window.confirm(`导入将替换当前 ${bugs.length} 条缺陷，并先自动备份。继续？`)) return;
+          const ok = await mutate({ action: 'import', data });
+          if (ok) setToast(`已导入 ${data.bugs.length} 条缺陷`);
+        } catch (importError) {
+          setToast(importError.message || '导入失败');
+        }
+      };
 
       const onDropStatus = useCallback((id, next) => {
         const bug = bugs.find(item => item.id === id);
@@ -1419,6 +1711,83 @@ window.__ModuleLoader__.load({
                 h('option', { key: 'agent', value: 'agent' }, 'Agent 上报'),
                 h('option', { key: 'manual', value: 'manual' }, '人工记录'),
               ]),
+            ]),
+            h('label', { key: 'priority', className: 'qag-select-wrap' }, [
+              h('span', { key: 'l', className: 'qag-visually-hidden' }, '优先级筛选'),
+              h('select', {
+                key: 's',
+                className: 'qag-select qag-select--compact',
+                value: priorityFilter,
+                onChange: event => setPriorityFilter(event.target.value),
+              }, [
+                h('option', { key: 'all', value: 'all' }, '全部优先级'),
+                ...Object.keys(PRIORITY).map(value => h('option', { key: value, value }, PRIORITY[value].label)),
+              ]),
+            ]),
+            h('label', { key: 'assignee', className: 'qag-select-wrap' }, [
+              h('span', { key: 'l', className: 'qag-visually-hidden' }, '负责人筛选'),
+              h('select', {
+                key: 's',
+                className: 'qag-select qag-select--compact',
+                value: assigneeFilter,
+                onChange: event => setAssigneeFilter(event.target.value),
+              }, [
+                h('option', { key: 'all', value: 'all' }, '全部负责人'),
+                ...assigneeOptions.map(value => h('option', { key: value, value }, value)),
+              ]),
+            ]),
+            h('label', { key: 'views', className: 'qag-select-wrap' }, [
+              h('span', { key: 'l', className: 'qag-visually-hidden' }, '保存的视图'),
+              h('select', {
+                key: 's',
+                className: 'qag-select qag-select--compact',
+                value: '',
+                onChange: event => {
+                  const value = event.target.value;
+                  if (value === '__save__') saveCurrentView();
+                  else if (value === '__delete__') removeCurrentView();
+                  else if (value) applySavedView(value);
+                  event.target.value = '';
+                },
+              }, [
+                h('option', { key: 'none', value: '' }, `视图（${savedViews.length}）`),
+                ...savedViews.map(view => h('option', { key: view.name, value: view.name }, view.name)),
+                h('option', { key: 'save', value: '__save__' }, '保存当前筛选…'),
+                savedViews.length > 0 ? h('option', { key: 'delete', value: '__delete__' }, '删除视图…') : null,
+              ]),
+            ]),
+            h('div', { key: 'export', className: 'qag-export-group' }, [
+              h('select', {
+                key: 'format',
+                className: 'qag-select qag-select--compact',
+                value: exportFormat,
+                onChange: event => setExportFormat(event.target.value),
+                'aria-label': '导出格式',
+              }, [
+                h('option', { key: 'json', value: 'json' }, 'JSON'),
+                h('option', { key: 'csv', value: 'csv' }, 'CSV'),
+                h('option', { key: 'md', value: 'md' }, 'Markdown'),
+              ]),
+              h('button', {
+                key: 'download',
+                type: 'button',
+                className: 'qag-btn qag-btn--ghost qag-btn--sm',
+                onClick: downloadExport,
+              }, '导出'),
+              h('button', {
+                key: 'import',
+                type: 'button',
+                className: 'qag-btn qag-btn--ghost qag-btn--sm',
+                onClick: () => fileInputRef.current && fileInputRef.current.click(),
+              }, '导入'),
+              h('input', {
+                key: 'file',
+                ref: fileInputRef,
+                type: 'file',
+                accept: 'application/json,.json',
+                className: 'qag-visually-hidden',
+                onChange: onImportFile,
+              }),
             ]),
             h('button', {
               key: 'help',
@@ -1531,6 +1900,8 @@ window.__ModuleLoader__.load({
                     h('option', { key: 'unfixed', value: 'unfixed' }, '未修复'),
                     h('option', { key: 'progress', value: 'progress' }, '修复中'),
                     h('option', { key: 'verify', value: 'verify' }, '待验证'),
+                    h('option', { key: 'cannot-reproduce', value: 'cannot-reproduce' }, '无法复现'),
+                    h('option', { key: 'duplicate', value: 'duplicate' }, '重复'),
                     h('option', { key: 'closed', value: 'closed' }, '已修复'),
                     h('option', { key: 'ignored', value: 'ignored' }, '已忽略'),
                   ]),
@@ -1583,6 +1954,9 @@ window.__ModuleLoader__.load({
           onTransition,
           onDelete,
           onSaveEdit,
+          onVerify: onVerification,
+          onMerge,
+          allBugs: bugs,
         }) : null,
 
         adding ? h(AddDialog, {
@@ -1660,6 +2034,7 @@ window.__ModuleLoader__.load({
 .qag-brand__title { font-size: 15px; font-weight: 600; letter-spacing: .01em; }
 .qag-brand__sub { font-size: 11.5px; color: var(--dsw-alias-label-tertiary, #667085); margin-top: 1px; }
 .qag-filters { display: flex; align-items: center; gap: 8px; flex: 1; justify-content: flex-end; flex-wrap: wrap; min-width: 0; }
+.qag-export-group { display: inline-flex; align-items: center; gap: 6px; }
 .qag-select-wrap { display: inline-flex; min-width: 0; }
 .qag-select { appearance: none; border: 1px solid var(--dsw-alias-border-l2, #d5dae2); border-radius: 8px;
   background-color: var(--dsw-alias-bg-base, #fff); color: var(--dsw-alias-label-primary, #1c2333);
@@ -1798,6 +2173,8 @@ window.__ModuleLoader__.load({
   background: var(--dsw-alias-bg-layer-2, #eef1f5); border-color: var(--dsw-alias-border-l1, #e4e7ec); }
 .qag-chip--module { color: var(--dsw-alias-label-secondary, #475467); background: transparent;
   border-color: var(--dsw-alias-border-l2, #d5dae2); max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.qag-chip--priority { font-weight: 600; background: color-mix(in srgb, currentColor 9%, transparent); }
+.qag-chip--assignee { color: var(--dsw-alias-label-secondary, #475467); background: var(--dsw-alias-bg-layer-2, #eef1f5); }
 .qag-chip--fix-danger { color: var(--dsw-alias-state-error-primary, #b42318);
   background: color-mix(in srgb, var(--dsw-alias-state-error-primary, #b42318) 9%, transparent);
   border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary, #b42318) 22%, transparent); }
@@ -1846,7 +2223,7 @@ window.__ModuleLoader__.load({
 .qag-col-check { width: 40px; text-align: center; }
 .qag-inline-field { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--dsw-alias-label-secondary, #475467); }
 .qag-table-wrap { border: 1px solid var(--dsw-alias-border-l1, #e4e7ec); border-radius: 12px; overflow: auto; background: var(--dsw-alias-bg-base, #fff); }
-.qag-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12.5px; min-width: 1020px; }
+.qag-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12.5px; min-width: 1120px; }
 .qag-table th { position: sticky; top: 0; z-index: 1; text-align: left; padding: 9px 14px; font-size: 11.5px; font-weight: 600;
   color: var(--dsw-alias-label-tertiary, #667085); background: var(--dsw-alias-bg-layer-1, #f8f9fb); border-bottom: 1px solid var(--dsw-alias-border-l1, #e4e7ec); white-space: nowrap; }
 .qag-table td { padding: 10px 14px; border-bottom: 1px solid var(--dsw-alias-border-l1, #e4e7ec); vertical-align: middle; }
@@ -1857,6 +2234,8 @@ window.__ModuleLoader__.load({
 .qag-table__title { max-width: 520px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
 .qag-col-id { width: 96px; }
 .qag-col-sev, .qag-col-status { width: 84px; }
+.qag-col-priority { width: 70px; }
+.qag-col-assignee { width: 96px; }
 .qag-col-source { width: 92px; }
 .qag-col-project { width: 120px; }
 .qag-col-module { width: 108px; }
@@ -1917,6 +2296,8 @@ window.__ModuleLoader__.load({
 .qag-textarea { resize: vertical; min-height: 64px; }
 .qag-textarea--sm { min-height: 52px; }
 .qag-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+.qag-inline-fields { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.qag-inline-fields .qag-input, .qag-inline-fields .qag-select { flex: 1; min-width: 120px; }
 .qag-field__label { font-size: 11.5px; font-weight: 600; color: var(--dsw-alias-label-secondary, #475467); margin: 10px 0 5px; }
 .qag-field__label:first-child { margin-top: 0; }
 .qag-evidence, .qag-history, .qag-notes { list-style: none; margin: 0; padding: 0; }
@@ -1984,7 +2365,7 @@ window.__ModuleLoader__.load({
   .qag-tabs { padding: 10px 14px 0; }
   .qag-content { padding: 12px 14px 20px; }
   .qag-banner { margin: 8px 14px 0; }
-  .qag-col-project, .qag-col-source, .qag-col-module { display: none; }
+  .qag-col-project, .qag-col-source, .qag-col-module, .qag-col-priority, .qag-col-assignee { display: none; }
   .qag-table { min-width: 620px; }
   .qag-cal__day { min-height: 66px; padding: 4px 5px; }
   .qag-cal__grid, .qag-cal__week { gap: 4px; }

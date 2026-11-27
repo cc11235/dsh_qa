@@ -12,6 +12,11 @@ It tracks newly discovered bugs, bugs being fixed, fixes awaiting regression, an
 - **Defect vs. requirement**: user messages are classified first. Only observed defects enter the board; feature requests, design changes and questions are skipped with `kind:"feature"` or `kind:"question"`.
 - **Mixed messages**: a message containing both a bug and a requirement can be split with `items[]`; only bug items are recorded.
 - **Git commit evidence**: `fix(scope): ...` commits are parsed and linked to matching defects.
+- **Verification loop**: record the verification command, output summary and outcome; pass closes, fail returns to progress, cannot-reproduce is terminal.
+- **Duplicate merging**: merge duplicates into a master while preserving records, evidence, notes and occurrence counts.
+- **Owner, priority and versions**: edit, filter and display owner, priority, due date, found/fix version and tags.
+- **Saved views**: keep project/status/severity/source/module/priority/owner/search filters in local browser storage.
+- **Export, import and backup**: JSON/CSV/Markdown export, JSON import with automatic backup, and seven retained backup copies.
 - **Historical backfill**: user reports from earlier sessions can be replayed through `qa_backfill_sessions`.
 - **Not recorded**: DSH tool-call failures (`Unknown tool`, invalid arguments, sandbox or approval denials, cancellations), arbitrary command failures without a project source location, environment problems, and requirement changes.
 - **Status updates**: a failed command that succeeds on rerun moves to `Verify`; a recurring defect is reopened.
@@ -88,15 +93,34 @@ A model can also pass a commit explicitly:
 
 `qa_mark_fixed` and `qa_capture.fixed[]` both accept `commit`.
 
+## Verification and merging
+
+- The drawer records a verification command, output summary and outcome:
+  - pass → Closed
+  - fail → In progress
+  - cannot reproduce → Cannot reproduce (terminal)
+- Results are stored as `Verification` evidence and in status history.
+- Duplicate defects can be merged into a master. The duplicate becomes `Duplicate`; its record, evidence, notes and occurrence count remain available.
+- Owner, priority, due date, found/fix version and tags are editable in the drawer and available as filters.
+
+## Export and import
+
+- Export JSON, CSV or Markdown from the header.
+- Import a JSON export; the current data is backed up before replacement.
+- Keep the latest seven `data.backup-*.json` files beside the data file.
+- Saved views live in browser localStorage and are not written to the data file.
+
 ## Status
 
-`Pending → Open → In progress → Verify → Closed`, plus `Ignored` (hidden from the board and available in the list). Every transition records time, actor and note.
+`Pending → Open → In progress → Verify → Closed`, plus `Cannot reproduce`, `Duplicate` and `Ignored`. Every transition records time, actor and note.
 
 - **User report**: enters `Open` directly; no manual confirmation.
 - **Automatic capture**: tool/build candidates enter `Pending`.
 - **Fix start**: `qa_begin_fix`, the first effective action or an actual file edit moves the defect to `In progress` with a **Robot fixing** label.
 - **Fix complete**: `qa_mark_fixed`; a successful rerun or a matching Git fix commit can also move it to `Verify`.
-- **Verified**: `qa_mark_fixed({verified:true})` or user confirmation closes the defect.
+- **Verified**: `qa_mark_fixed({verified:true})`, the drawer’s “verification passed” action or user confirmation closes the defect.
+- **Cannot reproduce**: recording this outcome moves the defect to a terminal state.
+- **Duplicate**: merging into a master keeps the original record with a duplicate link.
 - **Fallback scope**: once a QA status tool has been called within 10 minutes, automatic transitions stop; set `autoStatusFallback:false` to leave status entirely to the model.
 
 Severity values: Blocker, Critical, Major, Minor.

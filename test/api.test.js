@@ -306,7 +306,7 @@ test('action rejects malformed JSON and oversized bodies', async () => {
 
     const oversized = await invokeRoute(action, {
       method: 'POST',
-      body: JSON.stringify({ action: 'create', title: 'x'.repeat(600 * 1024) }),
+      body: JSON.stringify({ action: 'create', title: 'x'.repeat(11 * 1024 * 1024) }),
     });
     assert.equal(oversized.res.statusCode, 400);
     assert.match(oversized.res.json.error, /请求体过大/);
@@ -360,5 +360,59 @@ test('action and state share one in-memory store', async () => {
     const state = (await invokeRoute(routeOf(routes, '/state'))).res.json;
     assert.equal(state.bugs.length, 3);
     assert.equal(state.stats.open, 3);
+  });
+});
+test('action verify closes a defect and action merge marks duplicates', async () => {
+  await withApi(async ({ routes }) => {
+    const action = routeOf(routes, '/action');
+    const first = (await invokeRoute(action, { method: 'POST', body: jsonBody({ action: 'create', title: '退款回调重复入账', workspace: 'D:\\demo' }) })).res.json.bug;
+    const second = (await invokeRoute(action, { method: 'POST', body: jsonBody({ action: 'create', title: '退款回调重复入账（重复）', workspace: 'D:\\demo' }) })).res.json.bug;
+
+    const merged = await invokeRoute(action, {
+      method: 'POST',
+      body: jsonBody({ action: 'merge', masterId: first.id, duplicateIds: [second.id] }),
+    });
+    assert.equal(merged.res.statusCode, 200);
+    assert.deepEqual(merged.res.json.merged, [second.id]);
+
+    const verified = await invokeRoute(action, {
+      method: 'POST',
+      body: jsonBody({ action: 'verify', id: first.id, outcome: 'passed', command: 'npm test' }),
+    });
+    assert.equal(verified.res.statusCode, 200);
+    assert.equal(verified.res.json.bug.status, 'closed');
+
+    const state = (await invokeRoute(routeOf(routes, '/state'))).res.json;
+    assert.equal(state.bugs.find(bug => bug.id === second.id).status, 'duplicate');
+    assert.equal(state.bugs.find(bug => bug.id === second.id).duplicateOf, first.id);
+  });
+});
+
+test('export route returns JSON, CSV and Markdown; action import restores it', async () => {
+  await withApi(async ({ routes }) => {
+    const action = routeOf(routes, '/action');
+    await invokeRoute(action, { method: 'POST', body: jsonBody({ action: 'create', title: '登录接口 500', workspace: 'D:\\demo' }) });
+    const jsonExport = await invokeRoute(routeOf(routes, '/export'), { url: '/export?format=json', headers: { host: '127.0.0.1:50739' } });
+    assert.equal(jsonExport.res.statusCode, 200);
+    assert.match(jsonExport.res.headers['Content-Type'], /application\/json/);
+    const data = JSON.parse(jsonExport.res.body);
+    assert.equal(data.bugs.length, 1);
+
+    const csv = await invokeRoute(routeOf(routes, '/export'), { url: '/export?format=csv', headers: { host: '127.0.0.1:50739' } });
+    assert.equal(csv.res.statusCode, 200);
+    assert.match(csv.res.headers['Content-Type'], /text\/csv/);
+    assert.match(csv.res.body, /登录接口 500/);
+
+    const md = await invokeRoute(routeOf(routes, '/export'), { url: '/export?format=md', headers: { host: '127.0.0.1:50739' } });
+    assert.equal(md.res.statusCode, 200);
+    assert.match(md.res.headers['Content-Type'], /text\/markdown/);
+    assert.match(md.res.body, /QA 缺陷导出/);
+
+    await invokeRoute(action, { method: 'POST', body: jsonBody({ action: 'create', title: '导出失败', workspace: 'D:\\demo' }) });
+    const imported = await invokeRoute(action, { method: 'POST', body: jsonBody({ action: 'import', data }) });
+    assert.equal(imported.res.statusCode, 200);
+    assert.equal(imported.res.json.imported, 1);
+    const state = (await invokeRoute(routeOf(routes, '/state'))).res.json;
+    assert.equal(state.bugs.length, 1);
   });
 });
