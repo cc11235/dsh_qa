@@ -13,6 +13,8 @@ It tracks newly discovered bugs, bugs being fixed, fixes awaiting regression, an
 - **Mixed messages**: a message containing both a bug and a requirement can be split with `items[]`; only bug items are recorded.
 - **Git commit evidence**: `fix(scope): ...` commits are parsed and linked to matching defects.
 - **Verification loop**: record the verification command, output summary and outcome; pass closes, fail returns to progress, cannot-reproduce is terminal.
+- **Signature mute**: mute the same automatic failure for 30 days; hits are counted, not shown, and capture resumes when the rule expires. Blockers cannot be muted.
+- **Quiet close**: a model-verified defect enters `Verify` and closes after 24 hours without human action; blockers always wait for a human. Status changes can be undone.
 - **Duplicate merging**: merge duplicates into a master while preserving records, evidence, notes and occurrence counts.
 - **Owner, priority and versions**: edit, filter and display owner, priority, due date, found/fix version and tags.
 - **Saved views**: keep project/status/severity/source/module/priority/owner/search filters in local browser storage.
@@ -42,6 +44,7 @@ Only DSH session events are read; no extra model request is made.
 | A project check (`npm test`, `pnpm build`, `tsc`, `pytest`, `go test`, `dotnet build`, lint, etc.) exits non-zero with a real error/test failure | Create or merge a defect in `Pending` |
 | A project runtime command (`node`, `python`, `go run`, `npm run dev`, etc.) throws with a stack pointing into project source | Create a defect in `Pending` |
 | The same workspace and error signature appear again | Increment occurrence; reopen a closed or verified defect |
+| The signature is muted | Increment the rule hit counter only; resume capture when the rule expires or is removed |
 | A failed check/runtime command succeeds on rerun | Move the matching defect to `Verify` |
 | A user message describes a real symptom such as “did not start”, “no response”, “cannot”, “error”, “wrong value”, “data is 0”, “includes another tenant”, “redirects to localhost” | Record a user report in `Open`; merge similar reports in the same session |
 | The user says “fixed”, “works now”, “resolved” | Close the most recent active defect in that session |
@@ -103,6 +106,15 @@ A model can also pass a commit explicitly:
 - Duplicate defects can be merged into a master. The duplicate becomes `Duplicate`; its record, evidence, notes and occurrence count remain available.
 - Owner, priority, due date, found/fix version and tags are editable in the drawer and available as filters.
 
+## Muting and quiet close
+
+- Automatically captured defects can be muted for 30 days from the drawer. Rules match workspace + signature; hits increment a counter instead of creating or reopening defects, and capture resumes at expiry.
+- Blockers cannot be muted, and the rule dialog always shows hit counts and expiry dates.
+- The **静音规则** button lists and removes rules; rules are stored with the data file and included in backups.
+- `qa_mark_fixed({verified:true})` and `qa_capture.fixed[].verified:true` first move the defect to `Verify` and schedule a close; the defect closes on the next load or 5-minute sweep and records an `auto-close` evidence entry.
+- Any human edit, note or status action during `Verify` cancels the timer; blockers stay in `Verify` for human confirmation.
+- The drawer can undo the latest status change; undo entries are marked in the history.
+
 ## Export and import
 
 - Export JSON, CSV or Markdown from the header.
@@ -117,8 +129,8 @@ A model can also pass a commit explicitly:
 - **User report**: enters `Open` directly; no manual confirmation.
 - **Automatic capture**: tool/build candidates enter `Pending`.
 - **Fix start**: `qa_begin_fix`, the first effective action or an actual file edit moves the defect to `In progress` with a **Robot fixing** label.
-- **Fix complete**: `qa_mark_fixed`; a successful rerun or a matching Git fix commit can also move it to `Verify`.
-- **Verified**: `qa_mark_fixed({verified:true})`, the drawer’s “verification passed” action or user confirmation closes the defect.
+- **Fix complete**: `qa_mark_fixed`; `verified:true` enters `Verify` and closes after 24 hours without human action (blockers need human confirmation); a successful rerun or a matching Git fix commit also moves it to `Verify`.
+- **Verified**: the drawer’s “verification passed” action closes immediately; the model’s `verified:true` schedules a quiet close that any human interaction cancels.
 - **Cannot reproduce**: recording this outcome moves the defect to a terminal state.
 - **Duplicate**: merging into a master keeps the original record with a duplicate link.
 - **Fallback scope**: once a QA status tool has been called within 10 minutes, automatic transitions stop; set `autoStatusFallback:false` to leave status entirely to the model.
@@ -164,7 +176,7 @@ Only six core tools are registered to reduce selection ambiguity:
 | `qa_from_user_report` | Classify and record user messages | `report` + `kind`, or `items:[{text,kind}]` |
 | `qa_capture` | Batch findings and fixes for a turn | `found[]`, `fixed[]` (with optional `commit`) |
 | `qa_begin_fix` | Start a fix and enter `Robot fixing` | `id / title / query / latest`, `module`, `note` |
-| `qa_mark_fixed` | Finish a fix; `Verify` or `Closed` | same target fields, `verified`, `commit`, `note` |
+| `qa_mark_fixed` | Finish a fix; `verified` schedules a 24-hour quiet close | same target fields, `verified`, `commit`, `note` |
 | `qa_list_bugs` | Check duplicates and find ids | `status`, `severity`, `query`, `limit` |
 | `qa_backfill_sessions` | Historical backfill | `workspace`, `days`, `limit`, `force` |
 
@@ -216,7 +228,8 @@ Override the `qa-guardian` row in the profile `cordis.patch.yml`:
 
 ## Limitations
 
-- Extraction is deterministic rather than semantic; `Pending` items need review, and false positives can be deleted or ignored.
+- Extraction is deterministic rather than semantic; `Pending` items need review, and false positives can be deleted, ignored or muted by signature.
+- Muting matches signatures exactly; volatile output (for example random temp paths) may slip past a rule, so check hit counts in the rule dialog.
 - User-report extraction is conservative about requirements, design questions and configuration notes; very short or implicit reports may be missed. Use `qa_from_user_report` to add them.
 - Assistant-text extraction is off by default; when enabled it can still misclassify plans or documentation.
 - Backfill covers top-level sessions in the recent window and skips subagent and delegated-review sessions to avoid quoting review context.

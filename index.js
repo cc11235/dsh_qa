@@ -32,12 +32,13 @@ export const inject = ['tools', 'systemPrompt', 'webServer'];
 const API_BASE = '/api/qa-guardian';
 
 const ANNOUNCEMENT = `【QA 缺陷追踪 · 请主动维护状态】
+每轮开始先 qa_list_bugs({}) 看待办摘要（待分诊 / 待验证 / 致命 / 超期），有则先处理。
 先判断用户消息类型：只有「实际发生的缺陷」才进看板；功能需求/新增能力/提问不是 bug，请用 qa_from_user_report({report, kind:'feature'|'question'}) 明确跳过，不要登记为缺陷。
 一条消息混有 bug 和需求时，用 qa_from_user_report({items:[{text, kind}...]}) 拆开逐条分类，只有 kind:'bug' 的进看板。
 修 bug 时按下面流程调用工具，不要依赖自动兜底：
 1. 用户报告实际缺陷 → qa_from_user_report({report, title?, severity?, kind:'bug'})。
 2. 开始修复前 → qa_begin_fix({query:"用户现象或关键词", module?, note?})，也可用 {id} 或 {latest:true}；工具会返回匹配到的 BUG 编号。
-3. 修复完成 → qa_mark_fixed({id 或 query/latest, verified:true|false, note})。
+3. 修复完成 → qa_mark_fixed({id 或 query/latest, verified:true|false, note})；verified:true 进入待验证，24 小时无反对后自动关闭，致命缺陷必须留给人确认。
 4. 一轮修了多条 → qa_capture({found:[...], fixed:[...]})。
 5. 查询 / 查重 → qa_list_bugs({status?, severity?, query?})。
 这些工具都支持 id / title / query / latest，不需要先查编号。只记录项目缺陷，不记录工具调用失败、环境问题、需求变更。
@@ -245,6 +246,11 @@ export async function apply(ctx, rawConfig = {}) {
   }
   const assignedOwners = store.assignDefaultOwners();
   if (assignedOwners > 0 || reassigned > 0) await store.flush();
+  const autoClosed = store.sweepAutoClose();
+  if (autoClosed > 0) {
+    await store.flush();
+    log(`auto-closed ${autoClosed} verified defects after the quiet window`);
+  }
   const sseClients = new Set();
   const notifyClients = () => {
     if (sseClients.size === 0) return;
@@ -302,6 +308,7 @@ export async function apply(ctx, rawConfig = {}) {
       bugs,
       currentUser: store.owner,
       stats: store.stats(),
+      muteRules: store.listMuteRules(),
       projects,
       activity: store.activity(null, 160),
       sessions: capture.summary(),
@@ -474,6 +481,34 @@ export async function apply(ctx, rawConfig = {}) {
           });
           return writeJson(res, 200, { ok: true, bug });
         }
+        if (action === 'mute') {
+          const bug = store.get(String(body.id || ''));
+          if (!bug) return writeJson(res, 404, { ok: false, error: '未找到缺陷' });
+          if (!bug.signature) return writeJson(res, 400, { ok: false, error: '该缺陷没有可复用的签名，无法静音同类' });
+          if (bug.severity === 'blocker') return writeJson(res, 400, { ok: false, error: '致命缺陷不支持静音' });
+          const days = Number.isSafeInteger(body.days) ? Math.max(0, Math.min(365, body.days)) : undefined;
+          const rule = store.createMuteRule({
+            workspace: bug.workspace,
+            signature: bug.signature,
+            tool: bug.trigger && bug.trigger.tool ? bug.trigger.tool : '',
+            days,
+            note: `来自 ${bug.id}`,
+            actor: 'human',
+          });
+          if (body.ignore === true) {
+            store.update(bug.id, { status: 'ignored' }, { actor: 'human', note: '忽略并静音同类缺陷' });
+          }
+          return writeJson(res, 200, { ok: true, rule });
+        }
+        if (action === 'unmute') {
+          const removed = store.removeMuteRule(String(body.ruleId || body.id || ''));
+          return writeJson(res, removed ? 200 : 404, removed ? { ok: true } : { ok: false, error: '未找到静音规则' });
+        }
+        if (action === 'undo') {
+          const bug = store.undoStatus(String(body.id || ''), { actor: 'human' });
+          if (!bug) return writeJson(res, 400, { ok: false, error: '没有可撤销的状态变更' });
+          return writeJson(res, 200, { ok: true, bug });
+        }
         if (action === 'merge') {
           const result = store.mergeBugs(String(body.masterId || ''), body.duplicateIds, { actor: 'human' });
           return writeJson(res, 200, { ok: true, master: result.master, merged: result.merged });
@@ -590,7 +625,7 @@ export async function apply(ctx, rawConfig = {}) {
    */
   const captureTool = {
     name: 'qa_capture',
-    description: '【每轮编码批量登记】一轮结束（改了代码、跑了构建/测试）后调用，一次提交多条：found[] 新发现的项目缺陷（title 必填；description/severity/evidence 可选）；fixed[] 本轮修复（id/title/query/latest + note + verified）。只放项目缺陷；功能需求、工具调用失败、环境问题不要放进来。单条可用 qa_begin_fix / qa_mark_fixed，更精确。示例：{found:[{title:"登录接口500",severity:"critical"}], fixed:[{query:"点击没反应",verified:false}]}',
+    description: '【每轮编码批量登记】一轮结束（改了代码、跑了构建/测试）后调用，一次提交多条：found[] 新发现的项目缺陷（title 必填；description/severity/evidence 可选）；fixed[] 本轮修复（id/title/query/latest + note + verified；verified:true 进入待验证并在 24 小时后自动关闭）。只放项目缺陷；功能需求、工具调用失败、环境问题不要放进来。单条可用 qa_begin_fix / qa_mark_fixed，更精确。示例：{found:[{title:"登录接口500",severity:"critical"}], fixed:[{query:"点击没反应",verified:false}]}',
     parameters: {
       type: 'object',
       properties: {
@@ -628,7 +663,7 @@ export async function apply(ctx, rawConfig = {}) {
               latest: { type: 'boolean', description: 'Use the newest active defect in this workspace.' },
               note: { type: 'string', description: 'What was changed and how it was verified.' },
               commit: { type: 'string', description: 'Optional Git commit SHA/subject that contains this fix.' },
-              verified: { type: 'boolean', description: 'true closes it; false or omitted moves it to 待验证.' },
+              verified: { type: 'boolean', description: 'true: 已验证，24 小时后自动关闭；false/省略: 仅待验证。' },
             },
           },
         },
@@ -693,11 +728,22 @@ export async function apply(ctx, rawConfig = {}) {
           lines.push(`未找到缺陷：${clip(String(item.id || item.title || '(empty)'), 60)}`);
           continue;
         }
-        const status = item.verified === true ? 'closed' : 'verify';
-        store.update(target.id, { status }, {
-          actor: 'agent',
-          note: cleanTitle(item.note, 'Agent 标记已修复'),
-        });
+        let line = '';
+        if (item.verified === true) {
+          const result = store.requestClose(target, {
+            actor: 'agent',
+            note: cleanTitle(item.note, 'Agent 修复并验证通过'),
+          });
+          if (result.mode === 'confirm') line = `${target.id} → 待验证（致命缺陷需人工确认）`;
+          else if (result.mode === 'closed') line = `${target.id} 已关闭`;
+          else line = `${target.id} → 待验证（24 小时无反对后自动关闭）`;
+        } else {
+          store.update(target.id, { status: 'verify' }, {
+            actor: 'agent',
+            note: cleanTitle(item.note, 'Agent 标记已修复'),
+          });
+          line = `${target.id} → 待验证`;
+        }
         if (typeof item.commit === 'string' && item.commit.trim()) {
           store.addEvidence(target, {
             kind: 'git-commit',
@@ -705,7 +751,7 @@ export async function apply(ctx, rawConfig = {}) {
             sessionId: context.sessionId,
           });
         }
-        lines.push(`${target.id} → ${STATUS_LABELS[status]}`);
+        lines.push(line);
       }
       if (lines.length === 0) return { ok: true, message: '本轮没有需要登记的项目缺陷。' };
       return { ok: true, message: lines.join('\n'), lines };
@@ -885,7 +931,7 @@ export async function apply(ctx, rawConfig = {}) {
 
   const markFixedTool = {
     name: 'qa_mark_fixed',
-    description: '【修复完成】改完代码后调用。默认改为「待验证」；verified:true 改为「已修复」。目标支持 id / title / query / latest，返回实际 BUG 编号。只有在跑过测试或实际验证通过时才传 verified:true；只是“代码改完了”请用默认值进入待验证。若已提交 Git，可把 commit（SHA 或提交标题）一起传入。多个修复请用 qa_capture.fixed。',
+    description: '【修复完成】改完代码后调用。默认改为「待验证」；verified:true 进入「待验证」并在 24 小时无反对后自动关闭（致命缺陷必须人工确认）。目标支持 id / title / query / latest，返回实际 BUG 编号。只有在跑过测试或实际验证通过时才传 verified:true；只是“代码改完了”请用默认值进入待验证。若已提交 Git，可把 commit（SHA 或提交标题）一起传入。多个修复请用 qa_capture.fixed。',
     parameters: {
       type: 'object',
       properties: {
@@ -895,7 +941,7 @@ export async function apply(ctx, rawConfig = {}) {
         latest: { type: 'boolean', description: 'Use the newest active defect in this workspace.' },
         note: { type: 'string', description: 'What was changed and how it was verified.' },
         commit: { type: 'string', description: 'Optional Git commit SHA/subject that contains this fix.' },
-        verified: { type: 'boolean', description: 'true closes the defect; false or omitted moves it to 待验证.' },
+        verified: { type: 'boolean', description: 'true: 已验证，进入待验证并 24 小时后自动关闭；false/省略: 仅进入待验证。' },
       },
     },
     output: toolOutput('缺陷修复状态已更新'),
@@ -906,11 +952,26 @@ export async function apply(ctx, rawConfig = {}) {
       if (!target) {
         return { ok: false, message: '未找到匹配缺陷；可先调用 qa_list_bugs 查看当前看板，或传入 latest:true。' };
       }
-      const status = input.verified === true ? 'closed' : 'verify';
-      store.update(target.id, { status }, {
-        actor: 'agent',
-        note: cleanTitle(input.note, input.verified === true ? 'Agent 修复并验证通过' : 'Agent 标记已修复'),
-      });
+      let message = '';
+      if (input.verified === true) {
+        const result = store.requestClose(target, {
+          actor: 'agent',
+          note: cleanTitle(input.note, 'Agent 修复并验证通过'),
+        });
+        if (result.mode === 'confirm') {
+          message = `${target.id} → 待验证（致命缺陷需人工确认）`;
+        } else if (result.mode === 'closed') {
+          message = `${target.id} 已关闭`;
+        } else {
+          message = `${target.id} → 待验证，24 小时无反对后自动关闭`;
+        }
+      } else {
+        store.update(target.id, { status: 'verify' }, {
+          actor: 'agent',
+          note: cleanTitle(input.note, 'Agent 标记已修复'),
+        });
+        message = `${target.id} → 待验证`;
+      }
       if (typeof input.commit === 'string' && input.commit.trim()) {
         store.addEvidence(target, {
           kind: 'git-commit',
@@ -918,7 +979,7 @@ export async function apply(ctx, rawConfig = {}) {
           sessionId: context.sessionId,
         });
       }
-      return { ok: true, message: `${target.id} → ${STATUS_LABELS[status]}` };
+      return { ok: true, message };
     },
   };
 
@@ -954,7 +1015,7 @@ export async function apply(ctx, rawConfig = {}) {
 
   const listTool = {
     name: 'qa_list_bugs',
-    description: '【查看看板】列出当前工作区缺陷，返回 BUG 编号 / 状态 / 标题 / 严重度。开始新任务前查重，或需要 BUG 编号时调用。status / severity / query 可过滤，limit 默认 20。',
+    description: '【查看看板】列出当前工作区缺陷，返回 BUG 编号 / 状态 / 标题 / 严重度，并附带待办摘要（未分诊 / 待验证 / 致命 / 超期）。开始新任务前查重，或需要 BUG 编号时调用。status / severity / query 可过滤，limit 默认 20。',
     parameters: {
       type: 'object',
       properties: {
@@ -974,9 +1035,24 @@ export async function apply(ctx, rawConfig = {}) {
         && (!input.status || bug.status === input.status)
         && (!input.severity || bug.severity === input.severity)
         && (!needle || `${bug.id} ${bug.title} ${bug.description}`.toLowerCase().includes(needle))).slice(0, limit);
-      if (bugs.length === 0) return { ok: true, message: '当前工作区没有匹配的缺陷。' };
+      const pending = store.pendingSummary(context.workspace || '');
+      const pendingParts = [];
+      const describe = (label, item) => {
+        if (!item || item.count === 0) return;
+        pendingParts.push(`${label} ${item.count} 条${item.ids.length ? `（${item.ids.join('、')}）` : ''}`);
+      };
+      describe('待分诊', pending.untriaged);
+      describe('待验证', pending.pendingVerify);
+      describe('24h 内自动关闭', pending.autoClosing);
+      describe('致命未关闭', pending.blockers);
+      describe('已超期', pending.overdue);
+      describe('修复中停滞', pending.staleProgress);
+      const pendingText = pendingParts.length > 0 ? `\n待办：${pendingParts.join('；')}` : '';
+      if (bugs.length === 0) {
+        return { ok: true, message: `当前工作区没有匹配的缺陷。${pendingText}` };
+      }
       const lines = bugs.map(bug => `${statusLine(bug)}（${SEVERITY_LABELS[bug.severity] || bug.severity}）`);
-      return { ok: true, message: `共 ${bugs.length} 条缺陷：\n${lines.join('\n')}`, lines };
+      return { ok: true, message: `共 ${bugs.length} 条缺陷：\n${lines.join('\n')}${pendingText}`, lines };
     },
   };
 
@@ -1010,6 +1086,11 @@ export async function apply(ctx, rawConfig = {}) {
     const tools = [captureTool, fromUserReportTool, beginFixTool, markFixedTool, listTool, backfillTool];
     for (const tool of tools) ctx.tools.register(tool);
     disposers.push(eventsRoute, stateRoute, healthRoute, actionRoute);
+    const closeTimer = setInterval(() => {
+      const closed = store.sweepAutoClose();
+      if (closed > 0) log(`auto-closed ${closed} verified defects after the quiet window`);
+    }, 5 * 60 * 1000);
+    if (typeof closeTimer.unref === 'function') closeTimer.unref();
     // Recover defects reported before this install; stamped so it runs once per file.
     const backfillTimer = config.backfillOnStart !== false && config.autoCapture !== false
       ? setTimeout(() => {
@@ -1032,6 +1113,7 @@ export async function apply(ctx, rawConfig = {}) {
     if (backfillTimer && typeof backfillTimer.unref === 'function') backfillTimer.unref();
     return () => {
       if (backfillTimer) clearTimeout(backfillTimer);
+      if (closeTimer) clearInterval(closeTimer);
       unsubscribeChange();
       for (const client of sseClients) {
         try {

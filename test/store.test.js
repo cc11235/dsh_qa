@@ -624,3 +624,111 @@ test('subscribers are notified once per debounced burst', async () => {
     assert.equal(calls, 1);
   });
 });
+
+test('mute rules suppress matching captures, count hits and expire', async () => {
+  await withStore(async store => {
+    const draft = analyzeToolResult({
+      tool: 'ops_bash',
+      args: { command: 'npm test' },
+      text: 'FAIL src/login.test.ts\nTests: 1 failed, 2 passed\n[exit code: 1]',
+      isError: true,
+    });
+    assert.ok(draft);
+    const base = {
+      draft,
+      workspace: 'D:\\\\demo',
+      workspaceName: 'demo',
+      sessionId: 's1',
+      sessionTitle: '修复登录',
+      evidence: { kind: 'tool-error', excerpt: draft.excerpt, tool: 'ops_bash' },
+    };
+    const rule = store.createMuteRule({
+      workspace: base.workspace,
+      signature: draft.signature,
+      tool: 'ops_bash',
+      days: 30,
+    });
+    assert.equal(rule.id, 'MUTE-0001');
+    assert.ok(rule.expiresAt);
+
+    const muted = store.recordToolFailure(base);
+    assert.equal(muted.muted, true);
+    assert.equal(muted.bug, null);
+    assert.equal(store.list().length, 0);
+    assert.equal(store.listMuteRules()[0].hits, 1);
+
+    const blocker = store.recordToolFailure({ ...base, draft: { ...draft, severity: 'blocker' } });
+    assert.equal(blocker.muted, undefined);
+    assert.equal(store.list().length, 1);
+
+    const expiring = store.createMuteRule({ workspace: 'D:\\\\demo', signature: 'tool:expired', days: 1 });
+    expiring.expiresAt = new Date(Date.now() - 1000).toISOString();
+    assert.equal(store.matchMuteRule({ workspace: 'D:\\\\demo', signature: 'tool:expired' }), null);
+    assert.equal(store.listMuteRules({ includeExpired: true }).some(item => item.id === expiring.id), false);
+  });
+});
+
+test('requestClose defers closing for 24 hours and blockers wait for a human', async () => {
+  await withStore(async store => {
+    const bug = store.create(draftInput({ title: '普通缺陷', severity: 'major' }));
+    const deferred = store.requestClose(bug, { actor: 'agent', note: '测试通过' });
+    assert.equal(deferred.mode, 'deferred');
+    assert.equal(bug.status, 'verify');
+    assert.ok(bug.autoCloseAt);
+    assert.equal(store.sweepAutoClose(), 0);
+    assert.equal(store.sweepAutoClose({ now: Date.now() + 25 * 3600000 }), 1);
+    assert.equal(bug.status, 'closed');
+    assert.equal(bug.autoCloseAt, '');
+    assert.equal(bug.evidence.at(-1).kind, 'auto-close');
+
+    const blocker = store.create(draftInput({ title: '致命缺陷', severity: 'blocker' }));
+    const confirm = store.requestClose(blocker, { actor: 'agent' });
+    assert.equal(confirm.mode, 'confirm');
+    assert.equal(blocker.status, 'verify');
+    assert.equal(blocker.autoCloseAt, '');
+    assert.equal(store.sweepAutoClose({ now: Date.now() + 48 * 3600000 }), 0);
+    assert.equal(blocker.status, 'verify');
+  });
+});
+
+test('a human touch cancels the quiet window and undo reverts the last status', async () => {
+  await withStore(async store => {
+    const bug = store.create(draftInput({ title: '撤销测试', severity: 'major' }));
+    store.update(bug.id, { status: 'progress' }, { actor: 'agent' });
+    store.requestClose(bug, { actor: 'agent' });
+    assert.ok(bug.autoCloseAt);
+
+    store.update(bug.id, {}, { actor: 'human', note: '先别关，我再看看' });
+    assert.equal(bug.autoCloseAt, '');
+    assert.equal(store.sweepAutoClose({ now: Date.now() + 48 * 3600000 }), 0);
+
+    const undone = store.undoStatus(bug.id, { actor: 'human' });
+    assert.equal(undone.status, 'progress');
+    assert.equal(undone.history.at(-1).undo, true);
+  });
+});
+
+test('pendingSummary reports actionable work and mute rules survive reload', async () => {
+  await withStore(async (store, dir) => {
+    store.create(draftInput({ title: '待分诊', source: 'auto' }));
+    const verify = store.create(draftInput({ title: '待验证' }));
+    store.requestClose(verify, { actor: 'agent' });
+    const stale = store.create(draftInput({ title: '停滞' }));
+    store.update(stale.id, { status: 'progress' }, { actor: 'agent' });
+    stale.updatedAt = new Date(Date.now() - 5 * 86400000).toISOString();
+    store.create(draftInput({ title: '致命', severity: 'blocker' }));
+
+    const pending = store.pendingSummary('');
+    assert.equal(pending.untriaged.count, 1);
+    assert.equal(pending.pendingVerify.count, 1);
+    assert.equal(pending.staleProgress.count, 1);
+    assert.equal(pending.blockers.count, 1);
+
+    store.createMuteRule({ workspace: '', signature: 'tool:abc', days: 30 });
+    await store.flush();
+    const reloaded = await new BugStore({ filePath: path.join(dir, 'data.json'), log: () => {} }).load();
+    assert.equal(reloaded.listMuteRules().length, 1);
+    assert.equal(reloaded.list().length, 4);
+    await reloaded.dispose();
+  });
+});

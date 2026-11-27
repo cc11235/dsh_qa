@@ -418,3 +418,34 @@ test('export route returns JSON, CSV and Markdown; action import restores it', a
     assert.equal(state.bugs.length, 1);
   });
 });
+
+test('action mute creates a rule, ignores the defect and unmute removes it', async () => {
+  await withApi(async ({ routes }) => {
+    const action = routeOf(routes, '/action');
+    const created = await invokeRoute(action, {
+      method: 'POST',
+      body: jsonBody({ action: 'create', title: '重复误报', severity: 'major', workspace: 'D:\\\\demo' }),
+    });
+    const id = created.res.json.bug.id;
+
+    const muted = await invokeRoute(action, {
+      method: 'POST',
+      body: jsonBody({ action: 'mute', id, days: 30, ignore: true }),
+    });
+    assert.equal(muted.res.statusCode, 200);
+    assert.equal(muted.res.json.rule.id, 'MUTE-0001');
+    assert.ok(muted.res.json.rule.expiresAt);
+
+    const state = (await invokeRoute(routeOf(routes, '/state'))).res.json;
+    assert.equal(state.muteRules.length, 1);
+    assert.equal(state.bugs.find(bug => bug.id === id).status, 'ignored');
+
+    const off = await invokeRoute(action, {
+      method: 'POST',
+      body: jsonBody({ action: 'unmute', ruleId: 'MUTE-0001' }),
+    });
+    assert.equal(off.res.statusCode, 200);
+    const after = (await invokeRoute(routeOf(routes, '/state'))).res.json;
+    assert.equal(after.muteRules.length, 0);
+  });
+});

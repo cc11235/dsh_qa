@@ -77,6 +77,7 @@ window.__ModuleLoader__.load({
       'user-report': '用户提出',
       'user-confirm': '用户确认',
       observation: '观察',
+      'auto-close': '自动关闭',
     };
     const ACTIVITY_TYPE = {
       created: '新建缺陷',
@@ -86,6 +87,7 @@ window.__ModuleLoader__.load({
       updated: '更新缺陷',
       deleted: '删除缺陷',
       merged: '合并缺陷',
+      'auto-close': '自动关闭计划',
     };
 
     const HELP_TOOLS = [
@@ -110,13 +112,13 @@ window.__ModuleLoader__.load({
       {
         name: 'qa_mark_fixed',
         tag: '修复后',
-        purpose: '修复完成后标记待验证或已修复；同样支持 id、title、query、latest，可附带 Git commit。',
+        purpose: '修复完成后标记待验证；verified:true 会在 24 小时无反对后自动关闭（致命缺陷需人工确认）。同样支持 id、title、query、latest，可附带 Git commit。',
         params: 'id / title / query / latest、verified、commit、note',
       },
       {
         name: 'qa_list_bugs',
         tag: '查询',
-        purpose: '按状态、严重度或关键词查看当前工作区缺陷，用于查重和找编号。',
+        purpose: '按状态、严重度或关键词查看当前工作区缺陷，附带待办摘要（待分诊 / 待验证 / 致命 / 超期），用于查重和找编号。',
         params: 'status、severity、query、limit',
       },
       {
@@ -563,11 +565,45 @@ window.__ModuleLoader__.load({
     }
 
     function ActivityFeed({ items }) {
-      if (!items || items.length === 0) {
-        return h(EmptyState, { title: '还没有追踪动态', hint: '自动捕获或手动记录缺陷后，这里会按时间显示全部变化。' });
+      const [actorFilter, setActorFilter] = useState('all');
+      const visible = useMemo(() => {
+        const list = Array.isArray(items) ? items : [];
+        if (actorFilter === 'all') return list;
+        return list.filter(item => {
+          const actor = item.actor || '';
+          if (actorFilter === 'model') return actor === 'agent';
+          if (actorFilter === 'human') return actor === 'human' || actor === 'user';
+          if (actorFilter === 'rule') return actor === 'auto' || actor === 'rule';
+          return true;
+        });
+      }, [items, actorFilter]);
+      const filterBar = h('div', { key: 'filter', className: 'qag-feed__filter' }, [
+        h('span', { key: 'l', className: 'qag-muted' }, '操作者'),
+        h('select', {
+          key: 's',
+          className: 'qag-select qag-select--compact',
+          value: actorFilter,
+          onChange: event => setActorFilter(event.target.value),
+          'aria-label': '按操作者筛选动态',
+        }, [
+          h('option', { key: 'all', value: 'all' }, '全部'),
+          h('option', { key: 'model', value: 'model' }, '模型'),
+          h('option', { key: 'human', value: 'human' }, '人工'),
+          h('option', { key: 'rule', value: 'rule' }, '规则'),
+        ]),
+      ]);
+      if (visible.length === 0) {
+        return h('div', { className: 'qag-feed-wrap' }, [
+          filterBar,
+          h(EmptyState, {
+            key: 'empty',
+            title: actorFilter === 'all' ? '还没有追踪动态' : '没有符合操作者筛选的动态',
+            hint: actorFilter === 'all' ? '自动捕获或手动记录缺陷后，这里会按时间显示全部变化。' : '换一个操作者筛选，或等待模型下一次自动处理。',
+          }),
+        ]);
       }
       const groups = [];
-      for (const item of items) {
+      for (const item of visible) {
         const label = dayGroup(item.at);
         let group = groups[groups.length - 1];
         if (!group || group.label !== label) {
@@ -576,27 +612,31 @@ window.__ModuleLoader__.load({
         }
         group.items.push(item);
       }
-      return h('div', { className: 'qag-feed' }, groups.map(group => h('section', { key: group.label, className: 'qag-feed__group' }, [
-        h('div', { key: 'label', className: 'qag-feed__date' }, group.label),
-        h('ol', { key: 'list', className: 'qag-feed__list' }, group.items.map(item => h('li', {
-          key: `${item.at}-${item.type}-${item.bugId}`,
-          className: `qag-feed__item qag-feed__item--${item.type}`,
-        }, [
-          h('span', { key: 'dot', className: 'qag-feed__dot' }),
-          h('div', { key: 'body', className: 'qag-feed__body' }, [
-            h('div', { key: 'line', className: 'qag-feed__line' }, [
-              h('span', { key: 'id', className: 'qag-mono' }, item.bugId || ''),
-              h('span', { key: 'type', className: 'qag-feed__type' }, ACTIVITY_TYPE[item.type] || item.type),
-              item.from && item.to
-                ? h('span', { key: 'flow' }, `${(STATUS[item.from] || {}).label || item.from} → ${(STATUS[item.to] || {}).label || item.to}`)
-                : null,
+      return h('div', { className: 'qag-feed-wrap' }, [
+        filterBar,
+        h('div', { key: 'feed', className: 'qag-feed' }, groups.map(group => h('section', { key: group.label, className: 'qag-feed__group' }, [
+          h('div', { key: 'label', className: 'qag-feed__date' }, group.label),
+          h('ol', { key: 'list', className: 'qag-feed__list' }, group.items.map(item => h('li', {
+            key: `${item.at}-${item.type}-${item.bugId}`,
+            className: `qag-feed__item qag-feed__item--${item.type}`,
+          }, [
+            h('span', { key: 'dot', className: 'qag-feed__dot' }),
+            h('div', { key: 'body', className: 'qag-feed__body' }, [
+              h('div', { key: 'line', className: 'qag-feed__line' }, [
+                h('span', { key: 'id', className: 'qag-mono' }, item.bugId || ''),
+                h('span', { key: 'type', className: 'qag-feed__type' }, ACTIVITY_TYPE[item.type] || item.type),
+                item.actor ? h('span', { key: 'actor', className: 'qag-feed__actor' }, actorLabel(item.actor)) : null,
+                item.from && item.to
+                  ? h('span', { key: 'flow' }, `${(STATUS[item.from] || {}).label || item.from} → ${(STATUS[item.to] || {}).label || item.to}`)
+                  : null,
+              ]),
+              h('div', { key: 'title', className: 'qag-feed__title' }, item.title || ''),
+              item.note ? h('div', { key: 'note', className: 'qag-feed__note' }, item.note) : null,
+              h('div', { key: 'at', className: 'qag-feed__time' }, fullTime(item.at)),
             ]),
-            h('div', { key: 'title', className: 'qag-feed__title' }, item.title || ''),
-            item.note ? h('div', { key: 'note', className: 'qag-feed__note' }, item.note) : null,
-            h('div', { key: 'at', className: 'qag-feed__time' }, fullTime(item.at)),
-          ]),
+          ]))),
         ]))),
-      ])));
+      ]);
     }
 
     function Calendar({ bugs, onOpen }) {
@@ -721,7 +761,7 @@ window.__ModuleLoader__.load({
       ]);
     }
 
-    function Drawer({ bug, onClose, onTransition, onDelete, onSaveEdit, onVerify, onMerge, allBugs, busy }) {
+    function Drawer({ bug, onClose, onTransition, onDelete, onSaveEdit, onVerify, onMerge, onMute, onUnmute, onUndo, muteRules, allBugs, busy }) {
       const [note, setNote] = useState('');
       const [editing, setEditing] = useState(false);
       const [draft, setDraft] = useState({
@@ -733,6 +773,11 @@ window.__ModuleLoader__.load({
       const [mergeTarget, setMergeTarget] = useState('');
       const [mergeConfirm, setMergeConfirm] = useState(false);
       const noteRef = useRef(null);
+
+      const activeMuteRule = useMemo(() => (muteRules || []).find(rule => rule.signature === bug.signature
+        && (!rule.workspace || rule.workspace === bug.workspace)
+        && (!rule.expiresAt || Date.parse(rule.expiresAt) > Date.now())), [muteRules, bug.signature, bug.workspace]);
+      const undoable = (bug.history || []).some(item => item && item.from && item.from !== item.to && !item.undo);
 
       useEffect(() => {
         setEditing(false);
@@ -930,6 +975,7 @@ window.__ModuleLoader__.load({
                 ['会话', bug.sessionTitle || (bug.sessionId ? bug.sessionId.slice(0, 18) : '—')],
                 ['首次发现', fullTime(bug.createdAt)],
                 ['最近更新', fullTime(bug.updatedAt)],
+                ['自动关闭', bug.autoCloseAt ? fullTime(bug.autoCloseAt) : '—'],
                 ['出现次数', `×${bug.occurrence}`],
               ].map(([label, value]) => h('div', { key: label, className: 'qag-facts__row' }, [
                 h('dt', { key: 'k' }, label),
@@ -946,6 +992,15 @@ window.__ModuleLoader__.load({
                 disabled: busy || bug.status === status,
                 onClick: () => onTransition(bug.id, status, note),
               }, STATUS[status].label))),
+              undoable ? h('div', { key: 'undo', className: 'qag-inline-fields' }, [
+                h('button', {
+                  key: 'u',
+                  type: 'button',
+                  className: 'qag-btn qag-btn--ghost qag-btn--sm',
+                  disabled: busy,
+                  onClick: () => onUndo(bug.id),
+                }, '撤销上次状态'),
+              ]) : null,
               h('div', { key: 'note', className: 'qag-note-box' }, [
                 h('textarea', {
                   key: 'input',
@@ -974,6 +1029,7 @@ window.__ModuleLoader__.load({
               bug.verification
                 ? h('p', { key: 'last', className: 'qag-muted' }, `最近验证：${bug.verification.outcome === 'passed' ? '通过' : bug.verification.outcome === 'cannot-reproduce' ? '无法复现' : '未通过'} · ${fullTime(bug.verification.at)}${bug.verification.command ? ` · ${bug.verification.command}` : ''}`)
                 : h('p', { key: 'none', className: 'qag-muted' }, '尚未记录验证结果。'),
+              bug.status === 'verify' && bug.autoCloseAt ? h('p', { key: 'quiet', className: 'qag-quiet' }, `静默期至 ${fullTime(bug.autoCloseAt)}；期间进行任何人工操作都会取消自动关闭。`) : null,
               h('input', {
                 key: 'command',
                 className: 'qag-input',
@@ -1054,6 +1110,44 @@ window.__ModuleLoader__.load({
                     },
                   }, mergeConfirm ? `确认合并到 ${mergeTarget}` : '合并到主缺陷'),
                 ]),
+            ]),
+
+            h('section', { key: 'mute', className: 'qag-section' }, [
+              h('h3', { key: 't', className: 'qag-section__title' }, '同类静音'),
+              activeMuteRule
+                ? h('div', { key: 'active' }, [
+                  h('p', { key: 'p', className: 'qag-muted' }, `已静音同类信号（${activeMuteRule.id}），命中 ${activeMuteRule.hits || 0} 次；${activeMuteRule.expiresAt ? `${fullTime(activeMuteRule.expiresAt).slice(0, 10)} 到期` : '永久有效'}。`),
+                  h('button', {
+                    key: 'off',
+                    type: 'button',
+                    className: 'qag-btn qag-btn--ghost qag-btn--sm',
+                    disabled: busy,
+                    onClick: () => onUnmute(activeMuteRule.id),
+                  }, '解除静音'),
+                ])
+                : bug.source === 'auto' && bug.signature
+                  ? h('div', { key: 'add' }, [
+                    h('p', { key: 'p', className: 'qag-muted' }, bug.severity === 'blocker'
+                      ? '致命缺陷不支持静音；请先修复或人工确认。'
+                      : '同一签名的自动捕获只计数、不再进入看板；30 天后自动恢复。'),
+                    bug.severity === 'blocker' ? null : h('div', { key: 'actions', className: 'qag-status-actions' }, [
+                      h('button', {
+                        key: 'mute',
+                        type: 'button',
+                        className: 'qag-btn qag-btn--ghost qag-btn--sm',
+                        disabled: busy,
+                        onClick: () => onMute(bug.id, 30, false),
+                      }, '静音同类 30 天'),
+                      h('button', {
+                        key: 'mute-ignore',
+                        type: 'button',
+                        className: 'qag-btn qag-btn--ghost qag-btn--sm',
+                        disabled: busy,
+                        onClick: () => onMute(bug.id, 30, true),
+                      }, '忽略并静音'),
+                    ]),
+                  ])
+                  : h('p', { key: 'none', className: 'qag-muted' }, '只有自动捕获的缺陷可以静音同类。'),
             ]),
 
             h('section', { key: 'evidence', className: 'qag-section' }, [
@@ -1202,9 +1296,10 @@ window.__ModuleLoader__.load({
               h('ul', { key: 'list', className: 'qag-help__bullets' }, [
                 h('li', { key: '1' }, '用户反馈直接进入「待修复」；构建 / 测试 / 运行失败等自动候选先进入「待确认」。'),
                 h('li', { key: '2' }, '用户反馈或自动候选产生后的第一次有效动作、DSH 说「开始修复 / 定位到原因」或实际编辑文件时，最近一条未关闭缺陷自动进入「机器人修复中」。'),
-                h('li', { key: '3' }, '模型调用 qa_mark_fixed、同命令重跑成功或匹配到 Git 修复提交时推进到「待验证」；助手文本提取默认关闭。'),
-                h('li', { key: '4' }, '用户消息或助手回复中出现 bug 现象会自动提取；同一文件的重复反馈会合并。'),
-                h('li', { key: '5' }, '只记录实际项目缺陷；功能需求、提问、工具调用失败、环境问题都不会进看板。'),
+                h('li', { key: '3' }, '模型调用 qa_mark_fixed 时进入「待验证」；verified:true 会在 24 小时无反对后自动关闭，致命缺陷必须人工确认。'),
+                h('li', { key: '4' }, '同命令重跑成功或匹配到 Git 修复提交也会推进到「待验证」；助手文本提取默认关闭。'),
+                h('li', { key: '5' }, '自动捕获的同类信号可在详情页静音 30 天，命中只计数；到期自动恢复，致命缺陷不可静音。'),
+                h('li', { key: '6' }, '只记录实际项目缺陷；功能需求、提问、工具调用失败、环境问题都不会进看板。'),
               ]),
             ]),
             h('section', { key: 'usage', className: 'qag-help__section' }, [
@@ -1220,6 +1315,65 @@ window.__ModuleLoader__.load({
           ]),
           h('footer', { key: 'foot', className: 'qag-modal__foot' }, [
             h('button', { key: 'ok', type: 'button', className: 'qag-btn qag-btn--primary', onClick: onClose }, '知道了'),
+          ]),
+        ]),
+      ]);
+    }
+
+    function MuteRulesDialog({ rules, busy, onClose, onRemove }) {
+      const closeRef = useRef(onClose);
+      useEffect(() => {
+        closeRef.current = onClose;
+      });
+      useEffect(() => {
+        const onKey = event => {
+          if (event.key === 'Escape') closeRef.current();
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+      }, []);
+      return h(React.Fragment, null, [
+        h('div', { key: 'scrim', className: 'qag-scrim', onClick: onClose }),
+        h('div', {
+          key: 'dialog',
+          className: 'qag-modal qag-rules-modal',
+          role: 'dialog',
+          'aria-modal': 'true',
+          'aria-labelledby': 'qag-rules-title',
+        }, [
+          h('header', { key: 'head', className: 'qag-modal__head' }, [
+            h('div', { key: 'title-wrap' }, [
+              h('h2', { key: 't', id: 'qag-rules-title', className: 'qag-modal__title' }, '静音规则'),
+              h('div', { key: 'sub', className: 'qag-help__sub' }, '命中的同类信号只计数，不再进入看板；到期后自动恢复捕获。'),
+            ]),
+            h('button', { key: 'c', type: 'button', className: 'qag-icon-btn', 'aria-label': '关闭', onClick: onClose }, icon('close', 15)),
+          ]),
+          h('div', { key: 'body', className: 'qag-modal__body' }, rules.length === 0
+            ? h('p', { key: 'empty', className: 'qag-muted' }, '还没有静音规则。可在自动捕获的缺陷详情里选择「静音同类」。')
+            : h('ul', { key: 'list', className: 'qag-rules' }, rules.map(rule => h('li', { key: rule.id, className: 'qag-rules__item' }, [
+              h('div', { key: 'main', className: 'qag-rules__main' }, [
+                h('div', { key: 'id', className: 'qag-rules__id' }, [
+                  h('span', { key: 'code', className: 'qag-mono' }, rule.id),
+                  h('span', { key: 'hits', className: 'qag-chip' }, `命中 ${rule.hits || 0} 次`),
+                ]),
+                h('div', { key: 'scope', className: 'qag-rules__scope' }, [
+                  rule.workspace ? `项目：${rule.workspace.split(/[\\/]/).filter(Boolean).pop()}` : '项目：全部',
+                  rule.tool ? ` · ${rule.tool}` : '',
+                  rule.expiresAt ? ` · ${fullTime(rule.expiresAt).slice(0, 10)} 到期` : ' · 永久',
+                ].join('')),
+                rule.note ? h('div', { key: 'note', className: 'qag-muted' }, rule.note) : null,
+              ]),
+              h('button', {
+                key: 'remove',
+                type: 'button',
+                className: 'qag-btn qag-btn--ghost qag-btn--sm',
+                disabled: busy,
+                onClick: () => onRemove(rule.id),
+              }, '解除'),
+            ]))),
+          ),
+          h('footer', { key: 'foot', className: 'qag-modal__foot' }, [
+            h('button', { key: 'ok', type: 'button', className: 'qag-btn qag-btn--primary', onClick: onClose }, '关闭'),
           ]),
         ]),
       ]);
@@ -1387,6 +1541,7 @@ window.__ModuleLoader__.load({
       const [selectedId, setSelectedId] = useState('');
       const [adding, setAdding] = useState(false);
       const [helpOpen, setHelpOpen] = useState(false);
+      const [rulesOpen, setRulesOpen] = useState(false);
       const [selectedIds, setSelectedIds] = useState(() => new Set());
       const [busy, setBusy] = useState(false);
       const [toast, setToast] = useState('');
@@ -1481,6 +1636,7 @@ window.__ModuleLoader__.load({
       }, [toast]);
 
       const bugs = useMemo(() => (snapshot && Array.isArray(snapshot.bugs) ? snapshot.bugs : []), [snapshot]);
+      const muteRules = useMemo(() => (snapshot && Array.isArray(snapshot.muteRules) ? snapshot.muteRules : []), [snapshot]);
       useEffect(() => {
         setSelectedIds(previous => {
           if (previous.size === 0) return previous;
@@ -1655,6 +1811,24 @@ window.__ModuleLoader__.load({
           setSelectedId('');
           setToast('缺陷已删除');
         }
+      }, [mutate]);
+
+      const onMute = useCallback(async (id, days, ignore) => {
+        const ok = await mutate({ action: 'mute', id, days, ignore: ignore === true });
+        if (ok) setToast(ignore ? '已忽略并静音同类 30 天' : '已静音同类 30 天');
+        return ok;
+      }, [mutate]);
+
+      const onUnmute = useCallback(async ruleId => {
+        const ok = await mutate({ action: 'unmute', ruleId });
+        if (ok) setToast('已解除静音规则');
+        return ok;
+      }, [mutate]);
+
+      const onUndo = useCallback(async id => {
+        const ok = await mutate({ action: 'undo', id });
+        if (ok) setToast('已撤销上次状态变更');
+        return ok;
       }, [mutate]);
 
       const onCreate = useCallback(async payload => {
@@ -1848,6 +2022,13 @@ window.__ModuleLoader__.load({
               }),
             ]),
             h('button', {
+              key: 'rules',
+              type: 'button',
+              className: 'qag-btn qag-btn--ghost',
+              title: '静音规则',
+              onClick: () => setRulesOpen(true),
+            }, `静音规则${muteRules.length > 0 ? `（${muteRules.length}）` : ''}`),
+            h('button', {
               key: 'help',
               type: 'button',
               className: 'qag-btn qag-btn--ghost',
@@ -2014,6 +2195,10 @@ window.__ModuleLoader__.load({
           onSaveEdit,
           onVerify: onVerification,
           onMerge,
+          onMute,
+          onUnmute,
+          onUndo,
+          muteRules,
           allBugs: bugs,
         }) : null,
 
@@ -2029,6 +2214,14 @@ window.__ModuleLoader__.load({
         helpOpen ? h(HelpDialog, {
           key: 'help',
           onClose: () => setHelpOpen(false),
+        }) : null,
+
+        rulesOpen ? h(MuteRulesDialog, {
+          key: 'rules',
+          rules: muteRules,
+          busy,
+          onClose: () => setRulesOpen(false),
+          onRemove: onUnmute,
         }) : null,
 
         viewDialogOpen ? h(ViewDialog, {
@@ -2344,6 +2537,13 @@ window.__ModuleLoader__.load({
 .qag-feed__title { font-size: 12.5px; color: var(--dsw-alias-label-secondary, #475467); margin-top: 1px; }
 .qag-feed__note { font-size: 11.5px; color: var(--dsw-alias-label-tertiary, #667085); margin-top: 2px; }
 .qag-feed__time { font-size: 10.5px; color: var(--dsw-alias-label-tertiary, #98a2b3); margin-top: 3px; }
+.qag-feed-wrap { max-width: 920px; }
+.qag-feed__filter { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-bottom: 10px; }
+.qag-feed__actor { font-size: 10.5px; color: var(--dsw-alias-label-secondary, #475467); padding: 0 6px; border-radius: 4px;
+  background: var(--dsw-alias-bg-layer-2, #eef1f5); }
+.qag-quiet { margin: 6px 0 0; padding: 6px 8px; border-radius: 6px; font-size: 11.5px;
+  color: var(--dsw-alias-state-warn-label, #b54708); background: color-mix(in srgb, var(--dsw-alias-state-warn-primary, #dc8a12) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-state-warn-primary, #dc8a12) 22%, transparent); }
 .qag-scrim { position: absolute; inset: 0; z-index: 30; background: rgba(15,23,42,.18); }
 .qag-drawer { position: absolute; top: 0; right: 0; bottom: 0; z-index: 31; width: min(470px, 94%); display: flex; flex-direction: column;
   background: var(--dsw-alias-bg-base, #fff); border-left: 1px solid var(--dsw-alias-border-l2, #d5dae2);
@@ -2403,6 +2603,13 @@ window.__ModuleLoader__.load({
 .qag-modal__title { margin: 0; font-size: 15px; font-weight: 600; }
 .qag-modal__body { padding: 4px 16px 12px; overflow: auto; }
 .qag-help-modal { width: min(760px, calc(100% - 32px)); max-height: calc(100% - 40px); }
+.qag-rules-modal { width: min(560px, calc(100% - 32px)); }
+.qag-rules { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.qag-rules__item { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 10px 12px;
+  border: 1px solid var(--dsw-alias-border-l1, #e4e7ec); border-radius: 9px; background: var(--dsw-alias-bg-layer-1, #f8f9fb); }
+.qag-rules__main { min-width: 0; }
+.qag-rules__id { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+.qag-rules__scope { margin-top: 2px; font-size: 11.5px; color: var(--dsw-alias-label-tertiary, #667085); }
 .qag-help__sub { margin-top: 3px; font-size: 11.5px; color: var(--dsw-alias-label-tertiary, #667085); }
 .qag-help__body { flex: 1; min-height: 0; padding: 4px 20px 18px; overflow: auto; }
 .qag-help__section { margin-bottom: 18px; }

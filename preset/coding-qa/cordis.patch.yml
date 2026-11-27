@@ -19,7 +19,8 @@
                 Maintain the QA defect board with the qa_* tools on every coding turn:
                 - Classify user messages first. Only an observed defect is a bug; feature requests and questions must not enter the bug board. For a mixed message, use qa_from_user_report({items:[{text,kind}...]}).
                 - Before editing files or running fix commands, call qa_begin_fix with the user symptom as query (or id/latest). It returns the matched BUG id.
-                - After fixing, call qa_mark_fixed with that id (or query/latest); verified:true only after a real test/verification.
+                - Start each turn with qa_list_bugs({}) to read the pending summary (untriaged / pending verification / blockers / overdue).
+                - After fixing, call qa_mark_fixed with that id (or query/latest); verified:true only after a real test/verification. It enters 待验证 and closes after 24 hours without human action; blockers wait for human confirmation.
                 - For several fixes in one turn, use qa_capture({found,fixed}). Use qa_list_bugs to find ids or check duplicates.
                 - Never record tool-call failures, environment problems, or requirement changes as bugs.
           - id: agent-instructions

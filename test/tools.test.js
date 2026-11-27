@@ -80,7 +80,8 @@ test('qa_capture and qa_from_user_report work end to end', async () => {
       note: '同轮测试通过',
     }, exec);
     assert.equal(closed.ok, true);
-    assert.match(closed.message, /已关闭/);
+    assert.match(closed.message, /待验证/);
+    assert.match(closed.message, /自动关闭/);
 
     const user = await tools.get('qa_from_user_report').execute({
       report: '业务明细和日志总量为什么都是0',
@@ -121,7 +122,7 @@ test('qa_capture and qa_from_user_report work end to end', async () => {
     const data = JSON.parse(await readFile(path.join(dir, 'data.json'), 'utf8'));
     assert.equal(data.bugs.length, 3);
     assert.equal(data.bugs.find(bug => bug.title.includes('登录接口')).source, 'agent');
-    assert.equal(data.bugs.find(bug => bug.title.includes('登录接口')).status, 'closed');
+    assert.equal(data.bugs.find(bug => bug.title.includes('登录接口')).status, 'verify');
     assert.equal(data.bugs.find(bug => bug.title.includes('业务明细')).source, 'user');
   } finally {
     await rm(dir, { recursive: true, force: true });

@@ -107,7 +107,7 @@ test('qa_capture fixed supports id, query and latest targets', async () => {
     assert.match(byId.message, new RegExp(`${one} → 待验证`));
 
     const byQuery = await capture.execute({ fixed: [{ query: '订单页面白屏', verified: true }] }, execFor());
-    assert.match(byQuery.message, new RegExp(`${two} → 已关闭`));
+    assert.match(byQuery.message, new RegExp(`${two} → 待验证（24 小时无反对后自动关闭）`));
 
     const byLatest = await capture.execute({ fixed: [{ latest: true }] }, execFor());
     assert.match(byLatest.message, /BUG-\d+ → 待验证/);
@@ -244,7 +244,7 @@ test('qa_begin_fix never creates a defect', async () => {
   });
 });
 
-test('qa_mark_fixed moves to 待验证 by default and 已关闭 when verified', async () => {
+test('qa_mark_fixed moves to 待验证 by default and schedules a quiet close when verified', async () => {
   await withPlugin(async ({ tools }) => {
     const capture = tools.get('qa_capture');
     const id = bugIdOf((await capture.execute({ found: [{ title: '登录接口 500' }] }, execFor())).message);
@@ -252,9 +252,11 @@ test('qa_mark_fixed moves to 待验证 by default and 已关闭 when verified', 
     const pending = await tools.get('qa_mark_fixed').execute({ id, note: '改完了' }, execFor());
     assert.equal(pending.ok, true);
     assert.match(pending.message, /待验证/);
+    assert.doesNotMatch(pending.message, /自动关闭/);
 
-    const closed = await tools.get('qa_mark_fixed').execute({ id, verified: true, note: '测试通过' }, execFor());
-    assert.match(closed.message, /已关闭/);
+    const verified = await tools.get('qa_mark_fixed').execute({ id, verified: true, note: '测试通过' }, execFor());
+    assert.match(verified.message, /待验证/);
+    assert.match(verified.message, /24 小时无反对后自动关闭/);
 
     const missing = await tools.get('qa_mark_fixed').execute({ query: '不存在' }, execFor());
     assert.equal(missing.ok, false);
@@ -347,6 +349,17 @@ test('qa_backfill_sessions reports counts when no session service exists', async
     const result = await tools.get('qa_backfill_sessions').execute({ days: 1 }, execFor());
     assert.match(result.message, /扫描 0 个会话/);
     assert.match(result.message, /新增 0 条缺陷/);
+  });
+});
+
+test('qa_list_bugs appends the pending summary', async () => {
+  await withPlugin(async ({ tools }) => {
+    await tools.get('qa_capture').execute({
+      found: [{ title: '致命缺陷', severity: 'blocker' }],
+    }, execFor());
+    const listed = await tools.get('qa_list_bugs').execute({}, execFor());
+    assert.match(listed.message, /待办：/);
+    assert.match(listed.message, /致命未关闭 1 条/);
   });
 });
 

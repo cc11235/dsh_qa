@@ -14,3 +14,4 @@ npm-debug.log*
 _ui_*/
 _ref*/
 *.tmp
+/docs/

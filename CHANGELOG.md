@@ -2,6 +2,44 @@
 
 ## Unreleased
 
+### 中文
+
+#### 新增
+
+- 同类静音：自动捕获的缺陷可静音同类 30 天，命中只计数、不新建缺陷，到期自动恢复；致命缺陷不可静音；顶部「静音规则」可查看与解除。
+- 延迟关闭（策略 B）：模型 `verified:true` 先进入「待验证」，24 小时无人工操作后自动关闭；致命缺陷需人工确认；期间任何人工操作都会取消计时。
+- 状态撤销：详情页可撤销上次状态变更，撤销记录写入状态历史。
+- 待办摘要：`qa_list_bugs` 返回未分诊、待验证、自动关闭、致命、超期和停滞摘要，推动模型主动处理。
+
+#### 改进
+
+- 追踪动态显示操作者，并支持按模型 / 人工 / 规则筛选。
+- 模型验证通过不再直接关闭，关闭前保留人工观测窗口。
+- 自动关闭在下次加载或每 5 分钟巡检时执行，并写入「自动关闭」证据。
+
+#### 验证
+
+- `npm test`：209 个测试通过。
+
+### English
+
+#### Added
+
+- Signature muting: mute matching automatic failures for 30 days; hits are counted instead of creating defects, and capture resumes at expiry. Blockers cannot be muted; the rule dialog lists and removes rules.
+- Quiet close (policy B): model `verified:true` enters `Verify` and closes after 24 hours without human action; blockers wait for human confirmation, and any human action cancels the timer.
+- Status undo in the defect drawer, recorded in the history.
+- Pending summary in `qa_list_bugs` covering untriaged, pending verification, scheduled closes, blockers, overdue and stalled defects.
+
+#### Changed
+
+- The activity feed shows the actor and filters by model / human / rule.
+- Model verification no longer closes immediately; a human observation window is preserved.
+- Auto-close runs on load or the 5-minute sweep and records `auto-close` evidence.
+
+#### Verification
+
+- `npm test`: 209 tests passed.
+
 ## 0.2.2 - 2026-11-27
 
 ### 中文
