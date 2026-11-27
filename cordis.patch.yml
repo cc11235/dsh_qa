@@ -1,0 +1,10 @@
+# QA Guardian bundle: one Host row and its Client module.
+# The plugin row id doubles as the sidebar panel id and the main panel key.
+- insert:
+    - id: qa-guardian
+      name: dsh-qa-guardian
+      config:
+        autoCapture: true
+        captureAssistant: false
+        maxBugsPerTurn: 6
+        autoStatusFallback: true

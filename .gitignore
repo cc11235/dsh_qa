@@ -1,0 +1,16 @@
+node_modules/
+coverage/
+dist/
+
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+
+.env
+.env.*
+.cookie.json
+.tmp-edge*/
+_ui_*/
+_ref*/
+*.tmp

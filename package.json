@@ -1,0 +1,68 @@
+{
+  "name": "dsh-qa-guardian",
+  "version": "0.1.0",
+  "private": true,
+  "description": "QA Guardian: automatic defect capture, kanban, bug list and status tracking for DeepSeek Harness.",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./preset/coding-qa/cordis.patch.yml": "./preset/coding-qa/cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "lib",
+    "preset",
+    "skills",
+    "locale/*.json",
+    "cordis.patch.yml",
+    "README.md",
+    "icon.svg"
+  ],
+  "engines": {
+    "dsh": "0.2.2-rc.5"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": [
+        "./cordis.patch.yml",
+        "./preset/coding-qa/cordis.patch.yml"
+      ]
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-sidebar"
+      ]
+    },
+    "compatibility": {
+      "dsh": "0.2.2-rc.5",
+      "profiles": [
+        "web",
+        "desktop"
+      ]
+    }
+  },
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "qa",
+    "defect",
+    "bug-tracker",
+    "kanban",
+    "缺陷",
+    "看板"
+  ],
+  "license": "MIT"
+}

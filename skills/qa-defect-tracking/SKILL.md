@@ -1,0 +1,121 @@
+---
+name: qa-defect-tracking
+description: 维护 QA 缺陷看板：把用户消息分类为 bug、功能需求或提问，拆分一条消息中的多个条目，在开始和完成修复时更新缺陷状态，并按编号或症状关联已有缺陷。Use when the user reports a bug, asks to fix or check defects, mentions 缺陷/看板/修复状态, or when a coding turn starts and finishes a fix.
+---
+
+# QA 缺陷追踪
+
+## Overview
+
+QA Guardian 把编码会话中的真实缺陷沉淀成本地看板。这个 skill 只解决一件事：**在正确的时机，用正确的参数调用 `qa_*` 工具**。不要用它替代代码调查，也不要把它当成需求管理。
+
+## When to use
+
+- 用户报告实际现象：报错、崩溃、没反应、白屏、数据为 0、显示错误、行为不一致。
+- 用户一条消息里既有 bug 又有功能需求。
+- 你开始修复一个已记录缺陷，或修完准备更新状态。
+- 用户问「缺陷/看板/修复状态/有哪些 bug」。
+- 一轮编码结束，需要汇总新发现和已修复。
+
+## When not to use
+
+- 纯功能需求、交互调整、新增能力：不要登记为 bug；用 `kind:"feature"` 跳过。
+- 纯提问、方案讨论、代码解释：用 `kind:"question"` 跳过。
+- DSH 工具调用失败、环境/权限/网络问题、需求变更：不是项目缺陷。
+- 没有实际证据的猜测、代码风格偏好、第三方服务故障。
+
+## 工具选择
+
+| 场景 | 工具 | 关键参数 |
+| --- | --- | --- |
+| 用户消息（可能混合） | `qa_from_user_report` | `report` + `kind`，或 `items:[{text,kind}]` |
+| 开始修 | `qa_begin_fix` | `query` / `id` / `title` / `latest`、`module`、`note` |
+| 修完 | `qa_mark_fixed` | 同一套定位参数 + `verified` + `note` |
+| 一轮多条 | `qa_capture` | `found[]`、`fixed[]` |
+| 查编号 / 查重 | `qa_list_bugs` | `status` / `severity` / `query` |
+| 历史漏抓 | `qa_backfill_sessions` | `workspace` / `days`；仅在用户要求时 |
+
+## 先分类，再登记
+
+对每一条用户消息：
+
+1. 有实际现象 → `bug`
+2. 只描述期望/新增/调整 → `feature`
+3. 只问“怎么/为什么/是否”且没有现象 → `question`
+4. 一条消息混有多种 → 用 `items[]` 逐条分类
+
+示例：
+
+```json
+{
+  "report": "1. 看板中已关闭项不消失 2. 增加个日历吧",
+  "items": [
+    { "text": "看板中已关闭项不消失", "kind": "bug" },
+    { "text": "增加个日历吧", "kind": "feature" }
+  ]
+}
+```
+
+只有 `kind:"bug"` 会创建缺陷。不要把整条混合消息当成一个 bug。
+
+修复流程示例：
+
+```text
+1. qa_begin_fix({query:"点击没反应", module:"日志检索"})
+   → 返回 BUG-0008，状态变为「机器人修复中」
+2. 修改代码并运行测试
+3. qa_mark_fixed({id:"BUG-0008", verified:true, note:"事件绑定已修复，测试通过"})
+   → 状态变为「已修复」
+```
+
+如果不知道编号，用第 1 步返回的编号继续，不要重复猜。
+
+## 关联已有缺陷
+
+优先级：`id` > `title` > `query` > `latest`。
+
+- 知道编号就传 `id`，最准确。
+- 不知道编号时，用用户原话里最有区分度的短句作 `query`，例如 `"看板已关闭项不消失"`，不要用 `"报错"`、`"失败"` 这类泛词。
+- `latest:true` 只适合“当前只有一条未关闭缺陷”。
+- 工具返回匹配到的 BUG 编号；**后续调用直接复用这个编号**。
+- 匹配不到时工具不会改状态；先 `qa_list_bugs({query:"..."})` 拿到编号再试。
+
+## 状态流转
+
+```text
+用户反馈 → 待修复
+自动捕获 → 待确认
+开始修   → 修复中（机器人修复中）
+修完     → 待验证；验证通过 → 已修复
+误报     → 已忽略
+```
+
+- `qa_begin_fix`：第一次编辑/跑命令之前调用。
+- `qa_mark_fixed`：默认 `待验证`；只有跑过测试或实际验证通过才传 `verified:true`。若已提交 Git，把 `commit`（SHA 或提交标题）一起传入。
+- 插件的被动兜底会解析 `git commit` 的 `fix(scope): ...`，与已有缺陷标题匹配时写入 Git 提交证据并推进到待验证；匹配不到时不会凭空建缺陷。
+- 不要因为“代码改完了”就关闭缺陷。
+- 多条修复用 `qa_capture.fixed`，避免多次调用。
+
+## 一轮编码的检查清单
+
+1. 用户报告了实际缺陷吗？→ `qa_from_user_report({kind:"bug"})`
+2. 混合了需求/提问吗？→ 用 `items[]` 拆开
+3. 要开始修吗？→ `qa_begin_fix({query})`
+4. 修完了吗？→ `qa_mark_fixed({id, verified})`
+5. 本轮有多条新发现/修复吗？→ `qa_capture`
+6. 不确定编号？→ `qa_list_bugs({query})`
+
+## 反模式
+
+- ❌ 把“增加导出”“支持筛选”“优化布局”登记成 bug。
+- ❌ 把整条混合消息创建成一个缺陷。
+- ❌ 用 `latest:true` 在多个未关闭缺陷之间猜。
+- ❌ 只因为改完代码就 `verified:true`。
+- ❌ 把工具调用失败、环境错误、需求变更写进 bug 看板。
+- ❌ 同一轮同一条缺陷反复调用工具；先查重。
+
+## 验证
+
+- 创建/更新后用 `qa_list_bugs` 确认编号、状态和模块。
+- 状态变化应出现在看板「追踪动态」和「日历」。
+- 如果工具返回“未找到匹配缺陷”，不要反复猜；列出候选再让用户确认。

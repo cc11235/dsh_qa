@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "QA Guardian",
+    "description": "Automatic defect tracking inside DSH. Every failed build, test or command, every user-reported defect, and every defect statement in an assistant reply is folded into a local board. Each item carries an origin tag (user-raised / DSH auto) and a fix-state tag (unfixed / fixing / pending verification / fixed). Includes a kanban, a bug list and a status timeline. Open it from the sidebar entry “QA 缺陷追踪”. Agents can use qa_capture / qa_from_user_report to record defects. Data stays on this machine under ~/.dsh/qa-guardian."
+  }
+}
