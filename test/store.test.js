@@ -170,6 +170,34 @@ test('remove deletes a defect and records activity', async () => {
   });
 });
 
+test('removeMany prunes merge links and cleanupTargets filters status and age', async () => {
+  await withStore(async store => {
+    const master = store.create(draftInput({ title: '主缺陷' }));
+    const dup = store.create(draftInput({ title: '重复缺陷' }));
+    store.mergeBugs(master.id, [dup.id]);
+    const ignored = store.create(draftInput({ title: '忽略缺陷' }));
+    store.update(ignored.id, { status: 'ignored' });
+    ignored.updatedAt = new Date(Date.now() - 40 * 86400000).toISOString();
+
+    assert.deepEqual(store.cleanupTargets({ scope: 'ignored', days: 30 }).map(bug => bug.id), [ignored.id]);
+    assert.deepEqual(store.cleanupTargets({ scope: 'duplicate' }).map(bug => bug.id), [dup.id]);
+
+    const result = store.removeMany([dup.id, ignored.id], { note: '测试清理' });
+    assert.equal(result.removed.length, 2);
+    assert.equal(store.get(ignored.id), null);
+    assert.equal(store.get(master.id).mergedIds.includes(dup.id), false);
+    const latest = store.activity(null, 5)[0];
+    assert.equal(latest.type, 'deleted');
+    assert.match(latest.title, /批量删除 2 条/);
+
+    const otherMaster = store.create(draftInput({ title: '另一个主缺陷' }));
+    const otherDup = store.create(draftInput({ title: '另一个重复' }));
+    store.mergeBugs(otherMaster.id, [otherDup.id]);
+    store.remove(otherMaster.id);
+    assert.equal(store.get(otherDup.id).duplicateOf, '');
+  });
+});
+
 test('stats filters by workspace and counts statuses and severities', async () => {
   await withStore(async store => {
     const a = store.create(draftInput({ workspace: 'D:\\demo', severity: 'critical' }));

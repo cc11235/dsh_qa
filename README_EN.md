@@ -26,7 +26,8 @@ It tracks newly discovered bugs, bugs being fixed, fixes awaiting regression, an
 - **QA board**: Pending → Open → In progress → Verify. Closed defects leave the board; use the “closed N” link to open them in the list.
 - **Defect list**: filter by project, severity, status, module and keyword; inspect evidence, history and notes.
 - **Calendar**: monthly view of new, fixed and changed defects, with per-day details.
-- **Bulk actions**: select one, many or all visible defects and close, ignore or mark them for verification.
+- **Bulk actions**: select one, many or all visible defects and close, ignore or mark them for verification; ignored and duplicate records can be bulk-deleted.
+- **Cleanup**: the **清理** button removes ignored defects older than 30 days or duplicates for the current project, backing up the data file first; closed defects are kept for trends and regression checks.
 - **Activity feed**: creation, status changes, evidence and notes in chronological order.
 - **Agent tools**: six core tools that accept `id / title / query / latest`.
 - **Manual fallback**: create, edit, annotate, delete or ignore defects that were captured incorrectly.
@@ -115,11 +116,20 @@ A model can also pass a commit explicitly:
 - Any human edit, note or status action during `Verify` cancels the timer; blockers stay in `Verify` for human confirmation.
 - The drawer can undo the latest status change; undo entries are marked in the history.
 
+## Deleting and cleanup
+
+- The drawer deletes a single defect; single delete, bulk delete and cleanup all back up `data.json` first and return the backup filename.
+- Bulk delete is limited to `Ignored` and `Duplicate`; active defects must be resolved or ignored first.
+- The **清理** button offers two presets: ignored for more than 30 days and duplicates, scoped to the current project.
+- Closed defects are excluded from cleanup and stay available for trends, MTTR and regression checks.
+- Bulk deletion records one summary entry in the activity feed and prunes dangling merge links.
+- The latest seven backups are kept beside the data file.
+
 ## Export and import
 
 - Export JSON, CSV or Markdown from the header.
 - Import a JSON export; the current data is backed up before replacement.
-- Keep the latest seven `data.backup-*.json` files beside the data file.
+- Keep the latest seven `data.backup-*.json` files beside the data file; import, delete, bulk delete and cleanup back up first.
 - Saved views live in browser localStorage and are not written to the data file.
 
 ## Status

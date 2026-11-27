@@ -346,7 +346,7 @@ window.__ModuleLoader__.load({
       ]);
     }
 
-    function BulkBar({ count, hiddenCount, busy, onVerify, onSolve, onIgnore, onClear }) {
+    function BulkBar({ count, hiddenCount, busy, onVerify, onSolve, onIgnore, onDelete, deletable, onClear }) {
       return h('div', { className: 'qag-bulkbar' }, [
         h('span', { key: 'count', className: 'qag-bulkbar__count' }, `已选 ${count} 条${hiddenCount > 0 ? `（${hiddenCount} 条不在当前筛选）` : ''}`),
         h('span', { key: 'spacer', className: 'qag-bulkbar__spacer' }),
@@ -371,6 +371,14 @@ window.__ModuleLoader__.load({
           disabled: busy,
           onClick: onIgnore,
         }, '一键忽略'),
+        h('button', {
+          key: 'delete',
+          type: 'button',
+          className: 'qag-btn qag-btn--danger-ghost qag-btn--sm',
+          disabled: busy || !deletable,
+          title: deletable ? '删除选中的已忽略/重复缺陷' : '只能批量删除已忽略或重复的缺陷',
+          onClick: onDelete,
+        }, [icon('trash', 13), h('span', { key: 'l' }, '删除')]),
         h('button', {
           key: 'clear',
           type: 'button',
@@ -1284,11 +1292,12 @@ window.__ModuleLoader__.load({
               h('ul', { key: 'list', className: 'qag-help__bullets' }, [
                 h('li', { key: '1' }, '看板只显示待确认、待修复、修复中、待验证；已关闭不再占列，可从「已关闭 N 条」去列表查看。'),
                 h('li', { key: '2' }, '「日历」按天汇总新增、已修复和状态变化，点击日期查看当天缺陷动态。'),
-                h('li', { key: '3' }, '看板和列表都支持多选 / 全选，批量解决、忽略或标记待验证。'),
+                h('li', { key: '3' }, '看板和列表都支持多选 / 全选，批量解决、忽略或标记待验证；已忽略 / 重复项可批量删除。'),
                 h('li', { key: '4' }, '详情页可记录验证命令和结果：验证通过关闭、验证未通过回到修复中、无法复现进入终态。'),
                 h('li', { key: '5' }, '重复缺陷可在详情页合并到主缺陷，原记录保留并标记为「重复」。'),
                 h('li', { key: '6' }, '顶部可导出 JSON / CSV / Markdown，导入 JSON 前会自动备份；负责人、优先级、版本和标签可编辑和筛选。'),
                 h('li', { key: '7' }, '负责人默认规则：自动捕获和 Agent 上报为「机器人（bot）」，用户反馈和人工新建优先取已登录 DSH 账号名，未登录回退系统用户名；历史空值/旧系统名会在启动时补齐或迁移。'),
+                h('li', { key: '8' }, '顶部「清理」按项目清理已忽略超过 30 天或重复项，删除前自动备份；已关闭缺陷保留，用于趋势和回归判断。'),
               ]),
             ]),
             h('section', { key: 'auto', className: 'qag-help__section' }, [
@@ -1372,6 +1381,71 @@ window.__ModuleLoader__.load({
               }, '解除'),
             ]))),
           ),
+          h('footer', { key: 'foot', className: 'qag-modal__foot' }, [
+            h('button', { key: 'ok', type: 'button', className: 'qag-btn qag-btn--primary', onClick: onClose }, '关闭'),
+          ]),
+        ]),
+      ]);
+    }
+
+    function CleanupDialog({ counts, busy, onClose, onCleanup }) {
+      const closeRef = useRef(onClose);
+      useEffect(() => {
+        closeRef.current = onClose;
+      });
+      useEffect(() => {
+        const onKey = event => {
+          if (event.key === 'Escape') closeRef.current();
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+      }, []);
+      const rows = [
+        {
+          scope: 'ignored',
+          title: '已忽略超过 30 天',
+          hint: '长期不再出现的误报，按最近更新时间计算。',
+          count: counts.ignored,
+        },
+        {
+          scope: 'duplicate',
+          title: '重复项',
+          hint: '已合并到主缺陷的记录，删除后主缺陷与合并关系保留。',
+          count: counts.duplicate,
+        },
+      ];
+      return h(React.Fragment, null, [
+        h('div', { key: 'scrim', className: 'qag-scrim', onClick: onClose }),
+        h('div', {
+          key: 'dialog',
+          className: 'qag-modal qag-clean-modal',
+          role: 'dialog',
+          'aria-modal': 'true',
+          'aria-labelledby': 'qag-clean-title',
+        }, [
+          h('header', { key: 'head', className: 'qag-modal__head' }, [
+            h('div', { key: 'title-wrap' }, [
+              h('h2', { key: 't', id: 'qag-clean-title', className: 'qag-modal__title' }, '清理缺陷'),
+              h('div', { key: 'sub', className: 'qag-help__sub' }, '删除前自动备份；已关闭缺陷保留，用于趋势与回归判断。'),
+            ]),
+            h('button', { key: 'c', type: 'button', className: 'qag-icon-btn', 'aria-label': '关闭', onClick: onClose }, icon('close', 15)),
+          ]),
+          h('div', { key: 'body', className: 'qag-modal__body' }, [
+            ...rows.map(row => h('div', { key: row.scope, className: 'qag-clean__row' }, [
+              h('div', { key: 'main', className: 'qag-clean__main' }, [
+                h('div', { key: 't', className: 'qag-clean__title' }, row.title),
+                h('div', { key: 'h', className: 'qag-clean__hint' }, row.hint),
+              ]),
+              h('button', {
+                key: 'action',
+                type: 'button',
+                className: 'qag-btn qag-btn--danger-ghost qag-btn--sm',
+                disabled: busy || row.count === 0,
+                onClick: () => onCleanup(row.scope),
+              }, row.count > 0 ? `清理 ${row.count} 条` : '无需清理'),
+            ])),
+            h('p', { key: 'note', className: 'qag-help__note' }, '清理会写入追踪动态；数据文件备份保留最近 7 份，可在数据目录恢复。'),
+          ]),
           h('footer', { key: 'foot', className: 'qag-modal__foot' }, [
             h('button', { key: 'ok', type: 'button', className: 'qag-btn qag-btn--primary', onClick: onClose }, '关闭'),
           ]),
@@ -1496,7 +1570,7 @@ window.__ModuleLoader__.load({
       ]);
     }
 
-    function ConfirmDialog({ title, message, onClose, onConfirm, busy }) {
+    function ConfirmDialog({ title, message, onClose, onConfirm, busy, danger = false, confirmLabel = '继续' }) {
       return h(React.Fragment, null, [
         h('div', { key: 'scrim', className: 'qag-scrim', onClick: onClose }),
         h('div', { key: 'dialog', className: 'qag-modal', role: 'dialog', 'aria-modal': 'true' }, [
@@ -1507,7 +1581,13 @@ window.__ModuleLoader__.load({
           h('div', { key: 'body', className: 'qag-modal__body' }, h('p', { className: 'qag-muted' }, message)),
           h('footer', { key: 'foot', className: 'qag-modal__foot' }, [
             h('button', { key: 'c', type: 'button', className: 'qag-btn qag-btn--ghost', onClick: onClose }, '取消'),
-            h('button', { key: 'ok', type: 'button', className: 'qag-btn qag-btn--primary', disabled: busy, onClick: onConfirm }, '继续'),
+            h('button', {
+              key: 'ok',
+              type: 'button',
+              className: `qag-btn ${danger ? 'qag-btn--danger' : 'qag-btn--primary'}`,
+              disabled: busy,
+              onClick: onConfirm,
+            }, confirmLabel),
           ]),
         ]),
       ]);
@@ -1542,6 +1622,8 @@ window.__ModuleLoader__.load({
       const [adding, setAdding] = useState(false);
       const [helpOpen, setHelpOpen] = useState(false);
       const [rulesOpen, setRulesOpen] = useState(false);
+      const [cleanupOpen, setCleanupOpen] = useState(false);
+      const [deletePending, setDeletePending] = useState(null);
       const [selectedIds, setSelectedIds] = useState(() => new Set());
       const [busy, setBusy] = useState(false);
       const [toast, setToast] = useState('');
@@ -1724,13 +1806,25 @@ window.__ModuleLoader__.load({
       }, [scoped]);
 
       const selected = useMemo(() => bugs.find(bug => bug.id === selectedId) || null, [bugs, selectedId]);
+      const selectedBugs = useMemo(() => bugs.filter(bug => selectedIds.has(bug.id)), [bugs, selectedIds]);
+      const deletableSelected = selectedBugs.length > 0
+        && selectedBugs.every(bug => ['ignored', 'duplicate'].includes(bug.status));
+      const cleanupCounts = useMemo(() => {
+        const cutoff = Date.now() - 30 * 86400000;
+        const scopedBugs = project === 'all' ? bugs : bugs.filter(bug => bug.workspace === project);
+        return {
+          ignored: scopedBugs.filter(bug => bug.status === 'ignored' && Date.parse(bug.updatedAt) < cutoff).length,
+          duplicate: scopedBugs.filter(bug => bug.status === 'duplicate').length,
+        };
+      }, [bugs, project]);
+      const cleanupTotal = cleanupCounts.ignored + cleanupCounts.duplicate;
 
       const mutate = useCallback(async payload => {
         setBusy(true);
         try {
-          await sendAction(payload);
+          const result = await sendAction(payload);
           await load();
-          return true;
+          return result;
         } catch (actionError) {
           setToast(actionError.message || '操作失败');
           return false;
@@ -1770,6 +1864,48 @@ window.__ModuleLoader__.load({
         }
       }, [selectedIds, mutate]);
 
+      const requestBulkDelete = useCallback(() => {
+        if (!deletableSelected) return;
+        const ids = [...selectedIds];
+        setDeletePending({
+          kind: 'bulk',
+          ids,
+          count: ids.length,
+          title: '删除选中的缺陷',
+          message: `将永久删除 ${ids.length} 条已忽略/重复缺陷，删除前会自动备份当前数据文件。是否继续？`,
+        });
+      }, [deletableSelected, selectedIds]);
+
+      const requestCleanup = useCallback(scope => {
+        const count = cleanupCounts[scope];
+        if (!count) return;
+        setCleanupOpen(false);
+        setDeletePending({
+          kind: 'cleanup',
+          scope,
+          count,
+          title: '清理缺陷',
+          message: `将清理 ${count} 条${scope === 'ignored' ? '已忽略超过 30 天' : '重复'}的缺陷，删除前会自动备份当前数据文件。是否继续？`,
+        });
+      }, [cleanupCounts]);
+
+      const runDelete = useCallback(async () => {
+        if (!deletePending) return;
+        const pending = deletePending;
+        const payload = pending.kind === 'bulk'
+          ? { action: 'bulkDelete', ids: pending.ids }
+          : { action: 'cleanup', scope: pending.scope, days: 30, workspace: project === 'all' ? '' : project };
+        const result = await mutate(payload);
+        if (result) {
+          const deleted = Number.isSafeInteger(result.deleted) ? result.deleted : 0;
+          setToast(deleted > 0
+            ? `已删除 ${deleted} 条${result.backup ? `，备份：${result.backup}` : ''}`
+            : '没有需要删除的缺陷');
+          if (pending.kind === 'bulk') setSelectedIds(new Set());
+        }
+        setDeletePending(null);
+      }, [deletePending, mutate, project]);
+
       const onTransition = useCallback(async (id, next, note) => {
         const ok = await mutate({ action: 'update', id, status: next, note: note || '' });
         if (ok) setToast(`已更新为「${STATUS[next].label}」`);
@@ -1806,10 +1942,10 @@ window.__ModuleLoader__.load({
       }, [mutate]);
 
       const onDelete = useCallback(async id => {
-        const ok = await mutate({ action: 'delete', id });
-        if (ok) {
+        const result = await mutate({ action: 'delete', id });
+        if (result) {
           setSelectedId('');
-          setToast('缺陷已删除');
+          setToast(result.backup ? `缺陷已删除，备份：${result.backup}` : '缺陷已删除');
         }
       }, [mutate]);
 
@@ -2022,6 +2158,13 @@ window.__ModuleLoader__.load({
               }),
             ]),
             h('button', {
+              key: 'cleanup',
+              type: 'button',
+              className: 'qag-btn qag-btn--ghost',
+              title: '清理已忽略或重复的缺陷',
+              onClick: () => setCleanupOpen(true),
+            }, `清理${cleanupTotal > 0 ? `（${cleanupTotal}）` : ''}`),
+            h('button', {
               key: 'rules',
               type: 'button',
               className: 'qag-btn qag-btn--ghost',
@@ -2168,6 +2311,8 @@ window.__ModuleLoader__.load({
               onVerify: () => bulkStatus('verify', '待验证'),
               onSolve: () => bulkStatus('closed', '已修复'),
               onIgnore: () => bulkStatus('ignored', '已忽略'),
+              onDelete: requestBulkDelete,
+              deletable: deletableSelected,
               onClear: () => setSelectedIds(new Set()),
             }) : null,
             h(BugTable, {
@@ -2222,6 +2367,25 @@ window.__ModuleLoader__.load({
           busy,
           onClose: () => setRulesOpen(false),
           onRemove: onUnmute,
+        }) : null,
+
+        cleanupOpen ? h(CleanupDialog, {
+          key: 'cleanup',
+          counts: cleanupCounts,
+          busy,
+          onClose: () => setCleanupOpen(false),
+          onCleanup: requestCleanup,
+        }) : null,
+
+        deletePending ? h(ConfirmDialog, {
+          key: 'delete-confirm',
+          title: deletePending.title,
+          message: deletePending.message,
+          busy,
+          danger: true,
+          confirmLabel: '删除',
+          onClose: () => setDeletePending(null),
+          onConfirm: runDelete,
         }) : null,
 
         viewDialogOpen ? h(ViewDialog, {
@@ -2335,6 +2499,8 @@ window.__ModuleLoader__.load({
 .qag-btn--ghost:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover, #f2f4f7); }
 .qag-btn--danger-ghost { background: transparent; color: var(--dsw-alias-state-error-primary, #b42318); }
 .qag-btn--danger-ghost:hover:not(:disabled) { background: color-mix(in srgb, var(--dsw-alias-state-error-primary, #b42318) 9%, transparent); }
+.qag-btn--danger { background: var(--dsw-alias-state-error-primary, #b42318); border-color: transparent; color: #fff; }
+.qag-btn--danger:hover:not(:disabled) { background: color-mix(in srgb, var(--dsw-alias-state-error-primary, #b42318) 88%, #000); }
 .qag-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; flex: none;
   border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--dsw-alias-label-secondary, #475467); cursor: pointer; }
 .qag-icon-btn:hover { background: var(--dsw-alias-interactive-bg-hover, #f2f4f7); }
@@ -2610,6 +2776,13 @@ window.__ModuleLoader__.load({
 .qag-rules__main { min-width: 0; }
 .qag-rules__id { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
 .qag-rules__scope { margin-top: 2px; font-size: 11.5px; color: var(--dsw-alias-label-tertiary, #667085); }
+.qag-clean-modal { width: min(560px, calc(100% - 32px)); }
+.qag-clean__row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px 0;
+  border-bottom: 1px dashed var(--dsw-alias-border-l1, #e4e7ec); }
+.qag-clean__row:last-of-type { border-bottom: 0; }
+.qag-clean__main { min-width: 0; }
+.qag-clean__title { font-size: 12.5px; font-weight: 600; }
+.qag-clean__hint { margin-top: 2px; font-size: 11.5px; line-height: 1.6; color: var(--dsw-alias-label-tertiary, #667085); }
 .qag-help__sub { margin-top: 3px; font-size: 11.5px; color: var(--dsw-alias-label-tertiary, #667085); }
 .qag-help__body { flex: 1; min-height: 0; padding: 4px 20px 18px; overflow: auto; }
 .qag-help__section { margin-bottom: 18px; }

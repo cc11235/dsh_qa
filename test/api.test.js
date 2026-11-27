@@ -267,6 +267,7 @@ test('action delete removes a defect and reports missing ids', async () => {
     });
     assert.equal(deleted.res.statusCode, 200);
     assert.equal(deleted.res.json.ok, true);
+    assert.match(deleted.res.json.backup, /^data\.backup-.*\.json$/);
 
     const missing = await invokeRoute(action, {
       method: 'POST',
@@ -447,5 +448,68 @@ test('action mute creates a rule, ignores the defect and unmute removes it', asy
     assert.equal(off.res.statusCode, 200);
     const after = (await invokeRoute(routeOf(routes, '/state'))).res.json;
     assert.equal(after.muteRules.length, 0);
+  });
+});
+
+test('bulkDelete removes ignored defects with a backup and rejects active ones', async () => {
+  await withApi(async ({ routes }) => {
+    const action = routeOf(routes, '/action');
+    const create = async title => (await invokeRoute(action, {
+      method: 'POST',
+      body: jsonBody({ action: 'create', title, workspace: 'D:\\\\demo' }),
+    })).res.json.bug;
+    const one = await create('忽略一');
+    const two = await create('忽略二');
+    const active = await create('仍在处理');
+    for (const bug of [one, two]) {
+      await invokeRoute(action, {
+        method: 'POST',
+        body: jsonBody({ action: 'update', id: bug.id, status: 'ignored' }),
+      });
+    }
+
+    const rejected = await invokeRoute(action, {
+      method: 'POST',
+      body: jsonBody({ action: 'bulkDelete', ids: [one.id, active.id] }),
+    });
+    assert.equal(rejected.res.statusCode, 400);
+    assert.match(rejected.res.json.error, /只能批量删除/);
+
+    const ok = await invokeRoute(action, {
+      method: 'POST',
+      body: jsonBody({ action: 'bulkDelete', ids: [one.id, two.id] }),
+    });
+    assert.equal(ok.res.statusCode, 200);
+    assert.equal(ok.res.json.deleted, 2);
+    assert.match(ok.res.json.backup, /^data\.backup-.*\.json$/);
+
+    const state = (await invokeRoute(routeOf(routes, '/state'))).res.json;
+    assert.deepEqual(state.bugs.map(bug => bug.id), [active.id]);
+  });
+});
+
+test('cleanup removes ignored defects older than the cutoff with a backup', async () => {
+  await withApi(async ({ routes }) => {
+    const action = routeOf(routes, '/action');
+    for (const title of ['忽略甲', '忽略乙']) {
+      const bug = (await invokeRoute(action, {
+        method: 'POST',
+        body: jsonBody({ action: 'create', title, workspace: 'D:\\\\demo' }),
+      })).res.json.bug;
+      await invokeRoute(action, {
+        method: 'POST',
+        body: jsonBody({ action: 'update', id: bug.id, status: 'ignored' }),
+      });
+    }
+    await new Promise(resolve => setTimeout(resolve, 20));
+    const cleaned = await invokeRoute(action, {
+      method: 'POST',
+      body: jsonBody({ action: 'cleanup', scope: 'ignored', days: 0 }),
+    });
+    assert.equal(cleaned.res.statusCode, 200);
+    assert.equal(cleaned.res.json.deleted, 2);
+    assert.match(cleaned.res.json.backup, /^data\.backup-.*\.json$/);
+    const state = (await invokeRoute(routeOf(routes, '/state'))).res.json;
+    assert.equal(state.bugs.length, 0);
   });
 });

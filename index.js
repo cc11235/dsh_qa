@@ -13,6 +13,7 @@ import { backfillSessions } from './lib/backfill.js';
 import { Capture } from './lib/capture.js';
 import { featureFromText } from './lib/features.js';
 import {
+  BULK_DELETE_STATUSES,
   MAX_DESCRIPTION,
   PRIORITIES,
   PRIORITY_LABELS,
@@ -545,8 +546,50 @@ export async function apply(ctx, rawConfig = {}) {
           return writeJson(res, 200, { ok: true, bug });
         }
         if (action === 'delete') {
-          const removed = store.remove(String(body.id || ''), { actor: 'human' });
-          return writeJson(res, removed ? 200 : 404, removed ? { ok: true } : { ok: false, error: '未找到缺陷' });
+          const id = String(body.id || '');
+          const bug = store.get(id);
+          if (!bug) return writeJson(res, 404, { ok: false, error: '未找到缺陷' });
+          await store.flush();
+          const backup = await store.createBackup();
+          store.remove(id, { actor: 'human' });
+          return writeJson(res, 200, { ok: true, backup });
+        }
+        if (action === 'bulkDelete') {
+          const ids = Array.isArray(body.ids)
+            ? [...new Set(body.ids.filter(id => typeof id === 'string' && id))].slice(0, 200)
+            : [];
+          if (ids.length === 0) return writeJson(res, 400, { ok: false, error: '未选择缺陷' });
+          const targets = ids.map(id => store.get(id)).filter(Boolean);
+          const blocked = targets.filter(bug => !BULK_DELETE_STATUSES.includes(bug.status));
+          if (blocked.length > 0) {
+            const labels = blocked.slice(0, 5).map(bug => `${bug.id}（${STATUS_LABELS[bug.status]}）`).join('、');
+            return writeJson(res, 400, {
+              ok: false,
+              error: `只能批量删除已忽略或重复的缺陷；${labels} 不符合`,
+            });
+          }
+          if (targets.length === 0) return writeJson(res, 400, { ok: false, error: '未找到可删除的缺陷' });
+          await store.flush();
+          const backup = await store.createBackup();
+          const result = store.removeMany(targets.map(bug => bug.id), {
+            actor: 'human',
+            note: `批量删除 ${targets.length} 条缺陷`,
+          });
+          return writeJson(res, 200, { ok: true, deleted: result.removed.length, backup });
+        }
+        if (action === 'cleanup') {
+          const scope = body.scope === 'duplicate' ? 'duplicate' : 'ignored';
+          const days = Number.isSafeInteger(body.days) ? Math.max(0, Math.min(3650, body.days)) : 30;
+          const workspace = typeof body.workspace === 'string' ? body.workspace : '';
+          const targets = store.cleanupTargets({ scope, days, workspace });
+          if (targets.length === 0) return writeJson(res, 200, { ok: true, deleted: 0, backup: '', scope });
+          await store.flush();
+          const backup = await store.createBackup();
+          const result = store.removeMany(targets.map(bug => bug.id), {
+            actor: 'human',
+            note: scope === 'duplicate' ? '清理重复缺陷' : `清理已忽略超过 ${days} 天的缺陷`,
+          });
+          return writeJson(res, 200, { ok: true, deleted: result.removed.length, backup, scope });
         }
         return writeJson(res, 400, { ok: false, error: `未知操作：${action || '(empty)'}` });
       } catch (error) {
