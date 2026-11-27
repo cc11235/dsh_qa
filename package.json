@@ -5,6 +5,7 @@
   "description": "QA Guardian: automatic defect capture, kanban, bug list and status tracking for DeepSeek Harness.",
   "type": "module",
   "main": "index.js",
+  "icon": "icon.svg",
   "scripts": {
     "test": "node --test"
   },
@@ -26,9 +27,13 @@
     "locale/*.json",
     "cordis.patch.yml",
     "README.md",
+    "README_EN.md",
+    "CHANGELOG.md",
+    "LICENSE",
     "icon.svg"
   ],
   "engines": {
+    "node": ">=18",
     "dsh": "0.2.2-rc.5"
   },
   "dsh": {
@@ -61,6 +66,8 @@
     "defect",
     "bug-tracker",
     "kanban",
+    "calendar",
+    "git-commit",
     "缺陷",
     "看板"
   ],

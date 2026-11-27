@@ -1,5 +1,7 @@
 # QA 缺陷追踪（QA Guardian）
 
+[English](README_EN.md) | 中文
+
 在 DeepSeek Harness 内捕获编码过程中产生的缺陷，并沉淀成可追踪的 QA 看板。插件默认本地运行，不额外调用模型、不联网。
 
 用于追踪 DSH 编码时：新发现的 bug、正在修复的 bug、已修复待回归的 bug，以及修复后再次复现的回归问题。除工具/构建信号外，也会捕获用户在对话中直接报告的现象，并支持回填安装前的历史会话。看板通过 SSE 实时推送变更，无需手动刷新。
@@ -198,6 +200,12 @@ git commit -m "fix(viewer): keep closed defects out of the board"
 - 「同一命令重跑成功」按工具名 + 命令文本匹配，命令文本变化时不会自动推进，需人工改状态。
 - 面板语言目前为中文；插件元数据提供中英文标题与描述。
 
+## 相关文档
+
+- [English README](README_EN.md)
+- [CHANGELOG](CHANGELOG.md)
+- [LICENSE](LICENSE)
+
 ## 目录
 
 ```
@@ -226,3 +234,7 @@ npm test
 ```
 
 插件以本地目录方式安装：**插件管理 → 添加插件 → 选择本目录**，或在已授权环境使用 `plugin_manager` 的 `install_bundle`。安装或更新包含预设的 bundle 后，需要新建会话才能在选择器里看到「编码与缺陷追踪」预设。
+
+## 许可证
+
+MIT License，见 [LICENSE](LICENSE)。
