@@ -730,6 +730,7 @@ window.__ModuleLoader__.load({
       const [verifyCommand, setVerifyCommand] = useState('');
       const [verifyNote, setVerifyNote] = useState('');
       const [mergeTarget, setMergeTarget] = useState('');
+      const [mergeConfirm, setMergeConfirm] = useState(false);
       const noteRef = useRef(null);
 
       useEffect(() => {
@@ -738,6 +739,7 @@ window.__ModuleLoader__.load({
         setVerifyCommand('');
         setVerifyNote('');
         setMergeTarget('');
+        setMergeConfirm(false);
         setDraft({
           title: bug.title,
           description: bug.description || '',
@@ -1023,7 +1025,10 @@ window.__ModuleLoader__.load({
                     key: 'target',
                     className: 'qag-select',
                     value: mergeTarget,
-                    onChange: event => setMergeTarget(event.target.value),
+                    onChange: event => {
+                      setMergeTarget(event.target.value);
+                      setMergeConfirm(false);
+                    },
                   }, [
                     h('option', { key: 'none', value: '' }, '选择主缺陷…'),
                     ...(allBugs || [])
@@ -1037,11 +1042,16 @@ window.__ModuleLoader__.load({
                     disabled: busy || !mergeTarget,
                     onClick: () => {
                       if (!mergeTarget) return;
-                      if (window.confirm(`把 ${bug.id} 合并到 ${mergeTarget}？合并后本条标记为重复。`)) {
-                        onMerge(mergeTarget, [bug.id]).then(() => setMergeTarget(''));
+                      if (!mergeConfirm) {
+                        setMergeConfirm(true);
+                        return;
                       }
+                      onMerge(mergeTarget, [bug.id]).then(() => {
+                        setMergeTarget('');
+                        setMergeConfirm(false);
+                      });
                     },
-                  }, '合并到主缺陷'),
+                  }, mergeConfirm ? `确认合并到 ${mergeTarget}` : '合并到主缺陷'),
                 ]),
             ]),
 
@@ -1299,6 +1309,54 @@ window.__ModuleLoader__.load({
       ]);
     }
 
+    function ViewDialog({ name, onChange, onClose, onSave, busy }) {
+      return h(React.Fragment, null, [
+        h('div', { key: 'scrim', className: 'qag-scrim', onClick: onClose }),
+        h('div', { key: 'dialog', className: 'qag-modal', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'qag-view-title' }, [
+          h('header', { key: 'head', className: 'qag-modal__head' }, [
+            h('h2', { key: 't', id: 'qag-view-title', className: 'qag-modal__title' }, '保存筛选视图'),
+            h('button', { key: 'c', type: 'button', className: 'qag-icon-btn', 'aria-label': '关闭', onClick: onClose }, icon('close', 15)),
+          ]),
+          h('div', { key: 'body', className: 'qag-modal__body' }, [
+            h('label', { key: 'l', className: 'qag-field__label' }, '视图名称'),
+            h('input', {
+              key: 'input',
+              className: 'qag-input',
+              autoFocus: true,
+              value: name,
+              maxLength: 40,
+              placeholder: '例如：我的待验证',
+              onChange: event => onChange(event.target.value),
+              onKeyDown: event => {
+                if (event.key === 'Enter' && name.trim()) onSave();
+              },
+            }),
+          ]),
+          h('footer', { key: 'foot', className: 'qag-modal__foot' }, [
+            h('button', { key: 'c', type: 'button', className: 'qag-btn qag-btn--ghost', onClick: onClose }, '取消'),
+            h('button', { key: 'ok', type: 'button', className: 'qag-btn qag-btn--primary', disabled: busy || !name.trim(), onClick: onSave }, '保存视图'),
+          ]),
+        ]),
+      ]);
+    }
+
+    function ConfirmDialog({ title, message, onClose, onConfirm, busy }) {
+      return h(React.Fragment, null, [
+        h('div', { key: 'scrim', className: 'qag-scrim', onClick: onClose }),
+        h('div', { key: 'dialog', className: 'qag-modal', role: 'dialog', 'aria-modal': 'true' }, [
+          h('header', { key: 'head', className: 'qag-modal__head' }, [
+            h('h2', { key: 't', className: 'qag-modal__title' }, title),
+            h('button', { key: 'c', type: 'button', className: 'qag-icon-btn', 'aria-label': '关闭', onClick: onClose }, icon('close', 15)),
+          ]),
+          h('div', { key: 'body', className: 'qag-modal__body' }, h('p', { className: 'qag-muted' }, message)),
+          h('footer', { key: 'foot', className: 'qag-modal__foot' }, [
+            h('button', { key: 'c', type: 'button', className: 'qag-btn qag-btn--ghost', onClick: onClose }, '取消'),
+            h('button', { key: 'ok', type: 'button', className: 'qag-btn qag-btn--primary', disabled: busy, onClick: onConfirm }, '继续'),
+          ]),
+        ]),
+      ]);
+    }
+
     function Panel() {
       const [snapshot, setSnapshot] = useState(null);
       const [loading, setLoading] = useState(true);
@@ -1321,6 +1379,9 @@ window.__ModuleLoader__.load({
           return [];
         }
       });
+      const [viewDialogOpen, setViewDialogOpen] = useState(false);
+      const [viewName, setViewName] = useState('');
+      const [importPending, setImportPending] = useState(null);
       const [selectedId, setSelectedId] = useState('');
       const [adding, setAdding] = useState(false);
       const [helpOpen, setHelpOpen] = useState(false);
@@ -1470,21 +1531,20 @@ window.__ModuleLoader__.load({
         setPriorityFilter(view.priorityFilter || 'all');
         setAssigneeFilter(view.assigneeFilter || 'all');
       };
+      const openSaveView = () => {
+        setViewName('我的待验证');
+        setViewDialogOpen(true);
+      };
       const saveCurrentView = () => {
-        const name = window.prompt('视图名称', '我的待验证');
-        if (!name || !name.trim()) return;
+        const name = viewName.trim();
+        if (!name) return;
         const view = {
-          name: name.trim(),
+          name,
           project, query, severity, sourceFilter, moduleFilter, status, priorityFilter, assigneeFilter,
         };
         persistViews([...savedViews.filter(item => item.name !== view.name), view]);
+        setViewDialogOpen(false);
         setToast(`已保存视图「${view.name}」`);
-      };
-      const removeCurrentView = () => {
-        if (!savedViews.length) return;
-        const name = window.prompt(`删除哪个视图？可选：${savedViews.map(item => item.name).join(' / ')}`, savedViews[0].name);
-        if (!name) return;
-        persistViews(savedViews.filter(item => item.name !== name.trim()));
       };
 
       const selectedVisibleCount = filtered.reduce((count, bug) => count + (selectedIds.has(bug.id) ? 1 : 0), 0);
@@ -1618,9 +1678,7 @@ window.__ModuleLoader__.load({
         try {
           const data = JSON.parse(await file.text());
           if (!data || !Array.isArray(data.bugs)) throw new Error('文件中没有 bugs 数组');
-          if (!window.confirm(`导入将替换当前 ${bugs.length} 条缺陷，并先自动备份。继续？`)) return;
-          const ok = await mutate({ action: 'import', data });
-          if (ok) setToast(`已导入 ${data.bugs.length} 条缺陷`);
+          setImportPending(data);
         } catch (importError) {
           setToast(importError.message || '导入失败');
         }
@@ -1744,8 +1802,7 @@ window.__ModuleLoader__.load({
                 value: '',
                 onChange: event => {
                   const value = event.target.value;
-                  if (value === '__save__') saveCurrentView();
-                  else if (value === '__delete__') removeCurrentView();
+                  if (value === '__save__') openSaveView();
                   else if (value) applySavedView(value);
                   event.target.value = '';
                 },
@@ -1753,7 +1810,6 @@ window.__ModuleLoader__.load({
                 h('option', { key: 'none', value: '' }, `视图（${savedViews.length}）`),
                 ...savedViews.map(view => h('option', { key: view.name, value: view.name }, view.name)),
                 h('option', { key: 'save', value: '__save__' }, '保存当前筛选…'),
-                savedViews.length > 0 ? h('option', { key: 'delete', value: '__delete__' }, '删除视图…') : null,
               ]),
             ]),
             h('div', { key: 'export', className: 'qag-export-group' }, [
@@ -1971,6 +2027,28 @@ window.__ModuleLoader__.load({
         helpOpen ? h(HelpDialog, {
           key: 'help',
           onClose: () => setHelpOpen(false),
+        }) : null,
+
+        viewDialogOpen ? h(ViewDialog, {
+          key: 'view',
+          name: viewName,
+          busy,
+          onChange: setViewName,
+          onClose: () => setViewDialogOpen(false),
+          onSave: saveCurrentView,
+        }) : null,
+
+        importPending ? h(ConfirmDialog, {
+          key: 'import-confirm',
+          title: '导入缺陷数据',
+          message: `将用 ${importPending.bugs.length} 条缺陷替换当前 ${bugs.length} 条，并在导入前自动备份。是否继续？`,
+          busy,
+          onClose: () => setImportPending(null),
+          onConfirm: async () => {
+            const ok = await mutate({ action: 'import', data: importPending });
+            if (ok) setToast(`已导入 ${importPending.bugs.length} 条缺陷`);
+            setImportPending(null);
+          },
         }) : null,
 
         toast ? h('div', { key: 'toast', className: 'qag-toast', role: 'status' }, toast) : null,
