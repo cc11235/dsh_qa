@@ -1,6 +1,6 @@
 {
   "name": "dsh-qa-guardian",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "description": "QA Guardian: automatic defect capture, kanban, bug list and status tracking for DeepSeek Harness.",
   "type": "module",

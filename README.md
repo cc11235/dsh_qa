@@ -155,9 +155,10 @@ git commit -m "fix(viewer): keep closed defects out of the board"
 
 - `auto` / `agent` 来源（自动捕获、Agent 上报）默认负责人为 `bot`。
 - `user` / `manual` 来源（用户反馈、人工新建）默认负责人为当前用户账号。
-- 当前用户账号默认取操作系统用户名，可在配置中用 `currentUser` 覆盖。
-- 显式传入的负责人优先；合并重复项时，主缺陷为空会继承重复项的负责人。
-- 历史数据中为空的负责人会在启动时按来源补齐。
+- 当前用户账号优先取已登录的 DSH 账号显示名；未登录、读取失败或超时则回退到操作系统用户名。
+- 可用 `currentUser` 配置强制覆盖；显式传入的负责人始终优先。
+- 合并重复项时，主缺陷为空会继承重复项的负责人。
+- 历史数据中为空或仍为旧系统用户名的负责人，会在启动时按来源补齐或迁移。
 
 ## Agent 工具
 
@@ -211,7 +212,7 @@ git commit -m "fix(viewer): keep closed defects out of the board"
     backfillOnStart: true    # 启用后自动回填最近会话（每 6 小时最多一次）
     backfillDays: 2          # 回填窗口
     dataDir: ""              # 默认 ~/.dsh/qa-guardian
-    currentUser: ""          # 默认取操作系统用户名；用于用户反馈/人工新建的负责人
+    currentUser: ""          # 留空 = DSH 账号显示名，未登录回退系统用户名；填写则强制覆盖
 ```
 
 ## 数据与权限

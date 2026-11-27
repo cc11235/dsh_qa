@@ -150,6 +150,36 @@ function normalizeSeverity(value) {
   return SEVERITIES.includes(value) ? value : 'major';
 }
 
+/**
+ * Resolve the signed-in DSH account display name without exposing credentials.
+ * Returns an empty string when signed out, unavailable, failed, or timed out.
+ */
+export async function resolveAccountName(ctx, timeoutMs = 2000) {
+  const account = ctx && typeof ctx.get === 'function' ? ctx.get('deepseekAccount') : null;
+  if (!account || typeof account.getProfile !== 'function') return '';
+  let timer;
+  try {
+    const profile = await Promise.race([
+      account.getProfile({
+        version: '1.0.0',
+        locale: 'zh-CN',
+        timezoneOffsetSeconds: -new Date().getTimezoneOffset() * 60,
+      }),
+      new Promise(resolve => {
+        timer = setTimeout(() => resolve(null), timeoutMs);
+        if (typeof timer.unref === 'function') timer.unref();
+      }),
+    ]);
+    if (!profile || profile.status !== 'ready' || !profile.value) return '';
+    const value = profile.value;
+    return cleanTitle(value.name || '', '');
+  } catch {
+    return '';
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 function normalizeStatus(value) {
   return STATUSES.includes(value) ? value : 'open';
 }
@@ -192,21 +222,29 @@ export async function apply(ctx, rawConfig = {}) {
   const dataDir = typeof config.dataDir === 'string' && config.dataDir.trim()
     ? config.dataDir.trim()
     : defaultDataDir();
+  const configuredUser = typeof config.currentUser === 'string' && config.currentUser.trim()
+    ? config.currentUser.trim()
+    : '';
+  const systemUser = (() => {
+    try {
+      return os.userInfo().username;
+    } catch {
+      return '';
+    }
+  })();
+  const accountUser = configuredUser ? '' : await resolveAccountName(ctx);
+  const currentUser = configuredUser || accountUser || systemUser;
   const store = await new BugStore({
     filePath: path.join(dataDir, 'data.json'),
     log,
-    owner: typeof config.currentUser === 'string' && config.currentUser.trim()
-      ? config.currentUser.trim()
-      : (() => {
-        try {
-          return os.userInfo().username;
-        } catch {
-          return '';
-        }
-      })(),
+    owner: currentUser,
   }).load();
+  let reassigned = 0;
+  if (accountUser && systemUser && accountUser !== systemUser) {
+    reassigned = store.reassignOwner(systemUser, accountUser);
+  }
   const assignedOwners = store.assignDefaultOwners();
-  if (assignedOwners > 0) await store.flush();
+  if (assignedOwners > 0 || reassigned > 0) await store.flush();
   const sseClients = new Set();
   const notifyClients = () => {
     if (sseClients.size === 0) return;

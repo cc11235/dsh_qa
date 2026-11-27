@@ -1194,7 +1194,7 @@ window.__ModuleLoader__.load({
                 h('li', { key: '4' }, '详情页可记录验证命令和结果：验证通过关闭、验证未通过回到修复中、无法复现进入终态。'),
                 h('li', { key: '5' }, '重复缺陷可在详情页合并到主缺陷，原记录保留并标记为「重复」。'),
                 h('li', { key: '6' }, '顶部可导出 JSON / CSV / Markdown，导入 JSON 前会自动备份；负责人、优先级、版本和标签可编辑和筛选。'),
-                h('li', { key: '7' }, '负责人默认规则：自动捕获和 Agent 上报为「机器人（bot）」，用户反馈和人工新建为当前用户账号；历史空值会在启动时补齐。'),
+                h('li', { key: '7' }, '负责人默认规则：自动捕获和 Agent 上报为「机器人（bot）」，用户反馈和人工新建优先取已登录 DSH 账号名，未登录回退系统用户名；历史空值/旧系统名会在启动时补齐或迁移。'),
               ]),
             ]),
             h('section', { key: 'auto', className: 'qag-help__section' }, [
@@ -2254,7 +2254,7 @@ window.__ModuleLoader__.load({
 .qag-chip--module { color: var(--dsw-alias-label-secondary, #475467); background: transparent;
   border-color: var(--dsw-alias-border-l2, #d5dae2); max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .qag-chip--priority { font-weight: 600; background: color-mix(in srgb, currentColor 9%, transparent); }
-.qag-chip--assignee { color: var(--dsw-alias-label-secondary, #475467); background: var(--dsw-alias-bg-layer-2, #eef1f5); }
+.qag-chip--assignee { color: var(--dsw-alias-label-secondary, #475467); background: var(--dsw-alias-bg-layer-2, #eef1f5); max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
 .qag-chip--fix-danger { color: var(--dsw-alias-state-error-primary, #b42318);
   background: color-mix(in srgb, var(--dsw-alias-state-error-primary, #b42318) 9%, transparent);
   border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary, #b42318) 22%, transparent); }

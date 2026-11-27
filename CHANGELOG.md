@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## 0.2.2 - 2026-11-27
+
+### 中文
+
+- 负责人优先使用已登录的 DSH 账号显示名，未登录、读取失败或超时回退系统用户名。
+- 当前用户账号解析增加超时保护，避免账号服务拖慢插件激活。
+- 历史数据中的旧系统用户名会迁移为 DSH 账号名；为空时继续按来源补齐。
+- 保留 `currentUser` 强制覆盖和显式负责人优先。
+
+### English
+
+- Prefer the signed-in DSH account display name for the current user, falling back to the OS username when signed out, failed or timed out.
+- Add a timeout to account-name resolution so the account service cannot delay plugin activation.
+- Migrate legacy system-name assignees to the DSH account name; empty assignees remain filled by source.
+- Keep the `currentUser` override and explicit-assignee precedence.
+
 ## 0.2.1 - 2026-11-27
 
 ### 中文

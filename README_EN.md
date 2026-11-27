@@ -150,9 +150,10 @@ These rules are suggestions, not hard constraints. Unmatched defects show `Uncla
 
 - `auto` / `agent` sources (automatic capture, Agent report) default to `bot`.
 - `user` / `manual` sources (user report, manual creation) default to the current user account.
-- The current user account defaults to the OS username; override it with `currentUser`.
-- An explicit assignee wins; when merging, an empty master inherits the duplicate’s assignee.
-- Existing records with an empty assignee are filled by source at startup.
+- The current user account prefers the signed-in DSH account display name; when signed out, unavailable or timed out, it falls back to the OS username.
+- `currentUser` forces an explicit override; an explicitly supplied assignee always wins.
+- An empty master inherits the duplicate’s assignee when merging.
+- Empty or legacy system-name assignees are filled or migrated by source at startup.
 
 ## Agent tools
 
@@ -203,7 +204,7 @@ Override the `qa-guardian` row in the profile `cordis.patch.yml`:
     backfillOnStart: true    # backfill recent sessions at most once every 6 hours
     backfillDays: 2          # backfill window
     dataDir: ""              # default ~/.dsh/qa-guardian
-    currentUser: ""          # default OS username; owner for user reports/manual creation
+    currentUser: ""          # empty = DSH account name, OS username fallback; set to force an override
 ```
 
 ## Data and permissions

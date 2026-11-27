@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import path from 'node:path';
 import { BugStore } from '../lib/store.js';
+import { resolveAccountName } from '../index.js';
 import { cleanupDir, tempDir } from './helpers.js';
 
 test('default assignee follows source: bot for automatic, owner for human', async () => {
@@ -48,6 +49,32 @@ test('merge inherits the duplicate assignee when the master is empty', async () 
     master.assignee = '';
     store.mergeBugs(master.id, [duplicate.id]);
     assert.equal(master.assignee, 'carol');
+  } finally {
+    await cleanupDir(dir);
+  }
+});
+test('resolveAccountName uses the signed-in DSH account and falls back safely', async () => {
+  const signedIn = { get: () => ({ getProfile: async () => ({ status: 'ready', value: { name: 'dsh-user', contact: 'masked' } }) }) };
+  assert.equal(await resolveAccountName(signedIn), 'dsh-user');
+
+  const contactOnly = { get: () => ({ getProfile: async () => ({ status: 'ready', value: { name: null, contact: 'masked@example.com' } }) }) };
+  assert.equal(await resolveAccountName(contactOnly), '');
+
+  const signedOut = { get: () => ({ getProfile: async () => null }) };
+  assert.equal(await resolveAccountName(signedOut), '');
+
+  assert.equal(await resolveAccountName({ get: () => null }), '');
+});
+
+test('reassignOwner replaces the legacy system name with the account name', async () => {
+  const dir = await tempDir('qa-assignee-reassign-');
+  try {
+    const store = await new BugStore({ filePath: path.join(dir, 'data.json'), owner: 'cc112', log: () => {} }).load();
+    const first = store.create({ title: '用户缺陷一', source: 'user' });
+    const second = store.create({ title: '用户缺陷二', source: 'manual', assignee: 'alice' });
+    assert.equal(store.reassignOwner('cc112', 'dsh-user'), 1);
+    assert.equal(first.assignee, 'dsh-user');
+    assert.equal(second.assignee, 'alice');
   } finally {
     await cleanupDir(dir);
   }
